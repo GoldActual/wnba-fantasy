@@ -27,6 +27,7 @@ class Player(Base):
     __tablename__ = "players"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    wnba_id: Mapped[int | None] = mapped_column(Integer, index=True, unique=True, nullable=True)
     espn_id: Mapped[str | None] = mapped_column(String, index=True, unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False, index=True)
     wnba_team: Mapped[str | None] = mapped_column(String, nullable=True)

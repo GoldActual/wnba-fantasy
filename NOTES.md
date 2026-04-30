@@ -35,3 +35,40 @@ Running log of decisions and known issues. Append-only-ish: prefer adding new en
 
 ### Known issues
 - None yet.
+
+---
+
+## 2026-04-29 — Checkpoint 2: Veteran data ingestion
+
+### Sources confirmed
+- **Stats (2024 + 2025):** Rotowire's table loader hits `https://www.rotowire.com/wnba/tables/stats.php?statType=total&season=YYYY` — clean JSON, all 5 cats + games + minutes. Discovered by searching the inline JS on `/wnba/stats.php`. Requires `Referer` + `X-Requested-With: XMLHttpRequest` headers to mimic the in-page fetch.
+- **Positions (with dual-eligibility):** WNBA.com `/players` page embeds the entire current-season player list (272 players) inside `__NEXT_DATA__` as positional 25-tuples. **One fetch** vs the ~200-page-per-player scrape we feared. Position field is at index 10, format like `"G"`, `"F-G"`, `"C-F"` — split on hyphen → JSON list.
+- **ESPN player IDs:** ESPN's `/wnba/players` index is 404. Iterate 15 team rosters from `/wnba/teams`. Slugs are extracted dynamically so expansion teams get picked up automatically. ~45 sec to scrape all 15.
+- **Injuries:** `/wnba/injuries` is static HTML, BS4 parses it cleanly. 24 current entries, all linked to players via ESPN ID.
+
+### Source quirks (worth remembering)
+- **Rotowire emits one row per (player, team)**, not per-player. Players traded mid-season get two rows that we have to **sum** to get a season total. 7 such players in 2024, 21 in 2025. The aggregate-sum logic is in `upsert_season_totals()`.
+- **Rotowire upstream typo:** `asists` (no second `s`) instead of `assists`. Mapped at parse time.
+- **Rotowire encoding bug:** Azurá Stevens shows up as `Azur&#2013265921; Stevens` (invalid HTML numeric entity, codepoint > U+10FFFF). Manual alias map in `app/scrapers/rotowire.py::_NAME_FIXES`. Add new entries here as they appear.
+- **Rotowire doubles apostrophes:** `A''ja Wilson` (two single quotes). `normalize_name` strips all punctuation, so this collapses correctly during matching — no special handling needed.
+- **Rotowire `Phoenix` abbr is `PHO`**, WNBA.com uses `PHX`. We don't try to canonicalize team abbreviations across sources; we just store WNBA.com's value.
+- **Team coverage:** 2024 = 12 teams, 2025 added GSV (Golden State Valkyries) = 13, 2026 has 15 teams (added TOR Tempo + PDX Portland) — schema is dynamic, not hardcoded.
+
+### Cross-source matching
+- Canonical key = ESPN ID (per CP2 user choice). Set on a player record when ESPN team-roster scrape finds a name match.
+- Match function: `app/matching.py::normalize_name` — lowercase, NFKD-strip diacritics, drop punctuation, collapse whitespace, drop Jr/Sr/II/III suffixes.
+- Duplicate normalized names in WNBA.com data: 0 currently. If two players ever share a normalized name, the warning appears in the refresh output; resolve by adding context (team, jersey) to the key.
+
+### Match coverage at first run (2026-04-29)
+- 272 players from WNBA.com
+- 268/272 (99%) ESPN ID coverage — 4 unmatched are WNBA.com training-camp invitees not yet on official rosters
+- 11 ESPN players unmatched (training-camp slots not on WNBA.com's roster yet — fine, we don't need them)
+- 116/164 unique 2024 Rotowire players matched (48 unmatched are retired/unsigned vets like Tina Charles, Diana Taurasi)
+- 151/187 unique 2025 Rotowire players matched (36 unmatched, same pattern)
+- 24/24 injuries linked to players (100%)
+
+### Refresh script behavior
+- `python scripts/refresh.py` runs all four scrapers in order. Idempotent: re-running UPDATEs existing rows rather than duplicating.
+- **Never touches** `teams`, `rosters`, or `transactions` (per PLAN.md gotcha).
+- Stale injury rows (player no longer on ESPN's report) are deleted — injuries are a snapshot, not history.
+- Total scrape time: ~75 sec (15 ESPN rosters × 3 sec + 4 other fetches × 3 sec).
