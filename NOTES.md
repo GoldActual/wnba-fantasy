@@ -72,3 +72,43 @@ Running log of decisions and known issues. Append-only-ish: prefer adding new en
 - **Never touches** `teams`, `rosters`, or `transactions` (per PLAN.md gotcha).
 - Stale injury rows (player no longer on ESPN's report) are deleted — injuries are a snapshot, not history.
 - Total scrape time: ~75 sec (15 ESPN rosters × 3 sec + 4 other fetches × 3 sec).
+
+---
+
+## 2026-04-30 — Checkpoint 3: Rookie ingestion + projection
+
+### Per-40, not per-36
+- Both women's NCAA and the WNBA play 40-minute games (4×10 quarters). PLAN.md said "per-36" — that's an NBA carryover. Switched everything to per-40 internally. The PLAN.md multipliers (PTS 0.55, REB 0.70, AST 0.60, STL 0.50, BLK 0.50) were placeholders so the dimensional change is harmless; they live in `data/projection_config.json` and tune without code changes.
+
+### Sources confirmed
+- **WNBA.com `/draft/2026/board`** is server-side rendered Next.js. `__NEXT_DATA__.props.pageProps.draftRounds` carries all 45 picks (3 rounds × 15) with `pick`, `firstName`, `lastName`, `college`, `country`, `position`, `prospectId`, `teamName`, plus a `career` block of college per-game averages. **One fetch.**
+- **sports-reference.com NCAA player pages** live at `/cbb/players/<slug>.html` (NOT under `/cbb/women/` — men's and women's CBB share the same player namespace). `<table id="players_per_min">` is the Per-40-Minutes table. We filter rows to women's-CBB by checking the team-link href contains `/women/`.
+- **Slug discovery via `/cbb/search/search.fcgi?search=<name>`**: redirects to the player page on a unique match, returns a results page on a collision. We parse the results page and pick the women's-CBB entry whose year-range ends most recently (graduating class).
+
+### Source quirks
+- **sports-reference HTML-comment ad-blocker trick:** secondary stat tables (per-40, per-100, advanced) are wrapped in `<!-- ... -->` so default BS4 (`html.parser`) won't see them. `_strip_sr_comment_wrappers()` blanks the comment markers before parsing. Found this when our first parse returned 0 seasons for Fudd despite the HTML being there.
+- **WNBA.com career block is patchy:** even for US college picks SPG/BPG sometimes come back as empty strings. For full internationals (Awa Fam Thiam, Iyana Martín Carrión) the entire career block is empty.
+- **Career stats are *career averages*, not last-season** — Fudd's career line (14.7 ppg) lags her 2025-26 senior year (17.5 ppg). We use sports-reference *latest season* whenever available; only fall back to draft-JSON career-PG when sports-reference can't find the player.
+
+### Coverage at first run (45 picks)
+- 32 via NCAA per-40 (the rigorous path)
+- 4 via career-per-game fallback (Nell Angloma, Zee Spearman, Charlisse Dunn, Grace VanSlooten — sports-reference search didn't resolve them)
+- 9 zero (all internationals with no NCAA + no career-PG: Awa Fam Thiam, Iyana Martín Carrión, Frieda Bühner, Saffron Shiels, Ines Pitarch-Granel, Kokoro Tanaka, Manuela Puoch, Eszter Ratkai, Kejia Ran)
+- Total CP3 add-on time: ~3 minutes (1 draft-board fetch + ~70 sports-reference fetches at the 3-second rate-limit)
+
+### Rookie matching
+- We match rookies to existing `players` rows by normalized name (so a signed rookie who already appears on WNBA.com /players doesn't get duplicated). 33/45 picks were already in /players from CP1 — only 12 new rows created.
+- Order matters in `refresh.py`: WNBA.com /players (CP1) runs before rookie ingest (CP3) so signed rookies start as veterans, then get reclassified (`is_rookie=True`, `stats_source='ncaa_projection'`). Idempotent on rerun.
+
+### Config files (live in `backend/data/`)
+- `projection_config.json` — translation factors, MPG buckets by overall pick (1-4 → 27.5, 5-12 → 21.5, 13-24 → 11.5, 25+ → 4.0), default 36 games, assumed 30 college MPG for the per-game fallback. Auto-written from defaults on first import.
+- `rookie_overrides.json` — empty `{}` to start. Per-player override schema documented in `app/rookies.py::_apply_overrides`: optional `mpg`, `games`, `<cat>_mult`, `note`. Applied on every `refresh.py` run; can also re-trigger with no scraping by editing the file and running `scripts/report.py` (no — the overrides re-apply only at ingest time; need refresh).
+
+### Known gaps
+- **9 zero-projected internationals** are the biggest hole heading into the draft. Fam Thiam and Iyana are first-round picks that will rank dead-last by value until manually overridden in `rookie_overrides.json`.
+- **Career-PG fallback returns 0 for STL/BLK** when the WNBA.com `career` block omits them (common). Affects the 4 PG-fallback picks.
+- **Backtest of translation multipliers** is deferred to Phase 2 (per PLAN.md). Current values are PLAN.md defaults.
+
+### Refresh script changes
+- `[5/5] Rookies` step added. Runs after injuries; ~3 min wall-clock at the 3-sec rate limit.
+- `app/reports.py` now prints a "Top 10 projected rookies" block when any rookies are in the DB.

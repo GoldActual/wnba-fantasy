@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models import Injury, Player, StatsSeason
 
 DEFAULT_SEASONS = (2024, 2025)
+ROOKIE_SEASON = 2026
 
 
 def print_sample_report(db: Session, seasons: tuple[int, ...] = DEFAULT_SEASONS) -> None:
@@ -60,6 +61,34 @@ def print_sample_report(db: Session, seasons: tuple[int, ...] = DEFAULT_SEASONS)
         for r in rows:
             print(f"  {r.name:<24} {r.wnba_team or '-':<5} {r.games_played:>3} "
                   f"{r.points:>5} {r.rebounds:>5} {r.assists:>4} {r.steals:>4} {r.blocks:>4}")
+
+    rookie_count = db.scalar(
+        select(func.count()).select_from(Player).where(Player.is_rookie.is_(True))
+    ) or 0
+    if rookie_count:
+        print(f"\nTop 10 projected rookies, {ROOKIE_SEASON} (source='ncaa_projection'):")
+        rows = db.execute(
+            select(
+                Player.name, Player.draft_pick, Player.school, Player.projected_mpg,
+                StatsSeason.points, StatsSeason.rebounds, StatsSeason.assists,
+                StatsSeason.steals, StatsSeason.blocks,
+            )
+            .join(StatsSeason, StatsSeason.player_id == Player.id)
+            .where(
+                StatsSeason.season == ROOKIE_SEASON,
+                StatsSeason.source == "ncaa_projection",
+                Player.is_rookie.is_(True),
+            )
+            .order_by(StatsSeason.points.desc())
+            .limit(10)
+        ).all()
+        print(f"  ({rookie_count} rookies in DB)")
+        print(f"  {'Pk':>3} {'Name':<26} {'School':<14} {'MPG':>4} "
+              f"{'PTS':>4} {'REB':>4} {'AST':>4} {'STL':>4} {'BLK':>4}")
+        for r in rows:
+            print(f"  {r.draft_pick or 0:>3} {r.name:<26} {(r.school or '-')[:14]:<14} "
+                  f"{r.projected_mpg or 0:>4.1f} "
+                  f"{r.points:>4} {r.rebounds:>4} {r.assists:>4} {r.steals:>4} {r.blocks:>4}")
 
     inj_count = db.scalar(select(func.count()).select_from(Injury)) or 0
     inj_linked = db.scalar(

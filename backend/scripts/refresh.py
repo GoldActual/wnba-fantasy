@@ -21,8 +21,11 @@ from app.db import SessionLocal, init_db
 from app.matching import normalize_name
 from app.models import Injury, Player, StatsSeason
 from app.reports import DEFAULT_SEASONS as SEASONS, print_sample_report
+from app.rookies import ingest_draft
 from app.scrapers import espn, rotowire, wnba
 from app.scrapers.base import RateLimitedSession
+
+ROOKIE_SEASON = 2026
 
 
 def upsert_wnba_players(db: Session, players: list[wnba.WnbaPlayer]) -> tuple[int, int]:
@@ -232,10 +235,19 @@ def main() -> None:
                 print(f"      first 8 unmatched {season} names: {unmatched[:8]}")
             db.commit()
 
-        print("[4/4] ESPN injuries")
+        print("[4/5] ESPN injuries")
         injuries = espn.fetch_injuries(sess)
         ins, upd, unlinked = upsert_injuries(db, injuries)
         print(f"      fetched {len(injuries)} injuries (inserted {ins}, updated {upd}, unlinked {unlinked})")
+        db.commit()
+
+        print(f"[5/5] Rookies — WNBA.com /draft/{ROOKIE_SEASON}/board + sports-reference NCAA")
+        rk = ingest_draft(db, sess, season=ROOKIE_SEASON, verbose=True)
+        print(
+            f"      {rk.picks_total} picks: {rk.matched_ncaa} via NCAA per-40, "
+            f"{rk.fallback_career} via career PG fallback, {rk.fallback_zero} zero "
+            f"(applied {rk.overrides_applied} overrides)"
+        )
         db.commit()
 
         print_sample_report(db)

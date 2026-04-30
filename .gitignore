@@ -33,3 +33,6 @@ backend/data/*.db-shm
 
 # Logs
 *.log
+
+# Local scratch dir for fixtures, dumps, etc.
+.tmp/
