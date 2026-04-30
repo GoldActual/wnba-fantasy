@@ -112,3 +112,26 @@ Running log of decisions and known issues. Append-only-ish: prefer adding new en
 ### Refresh script changes
 - `[5/5] Rookies` step added. Runs after injuries; ~3 min wall-clock at the 3-sec rate limit.
 - `app/reports.py` now prints a "Top 10 projected rookies" block when any rookies are in the DB.
+
+---
+
+## 2026-04-30 — Checkpoint 4: Value score + Best Available view
+
+### Value formula (`app/value.py`)
+- z-score per cat against the league mean (PTS, REB, AST, STL, BLK), summed → raw value.
+- Multiply by `min(1, games / 32)` (availability), `1.04` for dual-position eligibility, `1.08` for triple, `0.40` if injury status is `Out` / `Out For Season` (Day-To-Day is NOT penalized — display only), `0.70` rookie confidence discount.
+- Population stdev (`pstdev`), so a player at the league mean lands at z=0; a degenerate single-element pool collapses safely to stdev=1.
+
+### Vet basis season selection (the Caitlin Clark fix)
+- Initial CP4 default was "use 2025 actuals only". That ranked Clark at #120 and Stewart at #22 because their 2025 games-played was injury-shortened — the availability factor (G/32) crushes the score even when the per-game stats were great.
+- Fix: vet basis = **most recent `wnba_actual` season with G >= MIN_HEALTHY_GAMES (=25)**, falling back to the most-recent-of-any-size if none clears the threshold. Clark falls back to 2024 (40 G, 769 PTS, 337 AST → rank #3). Stewart's 2025 was 31 G so it stays on 2025; bumping MIN_HEALTHY_GAMES to 35 would flip her to 2024 if we ever want that, but 25 felt like the right floor for "actual season vs injury noise".
+- Rookie basis = `(season=2026, source='ncaa_projection')`. Real `wnba_actual` rows always trump projection (Phase-2 swap-in is automatic).
+
+### Sanity check at first run (consensus expectation per PLAN.md)
+- A'ja Wilson #1, Alyssa Thomas #2, Caitlin Clark #3, Aliyah Boston #4, Dearica Hamby #5 — looks like consensus top-5 territory.
+- Lauren Betts (UCLA #4 pick) is the top rookie at overall #54 (raw 3.33 × 0.70 confidence = 2.29). Fudd #78, Miles #69. No rookies in top 10 — slightly below the PLAN.md "1-2 elite rookies sprinkled in" expectation, but Betts is comfortably in the early-round draftable tier.
+- The 9 zero-projection internationals (Awa Fam Thiam, Iyana, Bühner, etc.) sit at the bottom until manual override.
+
+### API + UI
+- `GET /api/players` returns the ranked list with optional filters (`search`, `position` ∈ {G,F,C}, `hide_rookies`, `rookies_only`, `limit`).
+- Frontend rewritten as a single-page Best Available view: search box, position tabs, rookie toggle, table with rank / injury dot / 🆕 badge / pos / team / value / 5-cat totals. Rookie rows tinted amber. No draft state yet — that's CP5.
