@@ -65,10 +65,13 @@ export function Draft({ onReset }: DraftProps) {
   const [hideDrafted, setHideDrafted] = useState(true)
   const [fitMyNeeds, setFitMyNeeds] = useState(false)
 
-  const refresh = async () => {
+  const refresh = async (forTeamId?: number) => {
     setError(null)
     try {
-      const [s, p] = await Promise.all([fetchDraftState(), fetchPlayers()])
+      const [s, p] = await Promise.all([
+        fetchDraftState(),
+        fetchPlayers(forTeamId !== undefined ? { for_team_id: forTeamId } : {}),
+      ])
       setState(s)
       setPlayers(p.players)
     } catch (e) {
@@ -77,7 +80,25 @@ export function Draft({ onReset }: DraftProps) {
   }
 
   useEffect(() => {
-    void refresh()
+    // First load: fetch state to learn which team is mine, then refetch
+    // players with for_team_id so we get marginal values from pick #1.
+    let cancelled = false
+    void (async () => {
+      try {
+        const s = await fetchDraftState()
+        if (cancelled) return
+        setState(s)
+        const myT = s.teams.find((t) => t.is_my_team)
+        const p = await fetchPlayers(myT ? { for_team_id: myT.id } : {})
+        if (cancelled) return
+        setPlayers(p.players)
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const playerById = useMemo(() => {
@@ -118,7 +139,17 @@ export function Draft({ onReset }: DraftProps) {
 
   const myTeamFull = !!state && !!myTeam && myRosters.length >= state.total_picks / state.teams.length
 
+  // Cat-strength comes from the server (`team_cat_status`) when teams exist.
+  // Falls back to a local sum if state hasn't loaded yet.
+  const myCatStatus = useMemo(() => {
+    if (state && myTeam && state.team_cat_status[String(myTeam.id)]) {
+      return state.team_cat_status[String(myTeam.id)]
+    }
+    return null
+  }, [state, myTeam])
+
   const myCatTotals = useMemo(() => {
+    if (myCatStatus) return myCatStatus.totals
     const totals: Record<Cats, number> = { points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0 }
     for (const r of myRosters) {
       const p = playerById.get(r.player_id)
@@ -126,7 +157,14 @@ export function Draft({ onReset }: DraftProps) {
       for (const c of CATS) totals[c] += p.totals[c]
     }
     return totals
-  }, [myRosters, playerById])
+  }, [myCatStatus, myRosters, playerById])
+
+  const paceColor = (ratio: number | null): string => {
+    if (ratio == null) return 'bg-slate-100 text-slate-600 border-slate-200'
+    if (ratio >= 0.95) return 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    if (ratio >= 0.75) return 'bg-amber-50 text-amber-800 border-amber-200'
+    return 'bg-red-50 text-red-800 border-red-200'
+  }
 
   const onClickPlayer = (p: Player) => {
     if (!state || !state.on_the_clock) return
@@ -140,7 +178,8 @@ export function Draft({ onReset }: DraftProps) {
     try {
       const next = await makePick(player_id, team_id)
       setState(next)
-      const p = await fetchPlayers()
+      const myT = next.teams.find((t) => t.is_my_team)
+      const p = await fetchPlayers(myT ? { for_team_id: myT.id } : {})
       setPlayers(p.players)
       setPickPrompt(null)
     } catch (e) {
@@ -156,7 +195,8 @@ export function Draft({ onReset }: DraftProps) {
     try {
       const next = await undoLastPick()
       setState(next)
-      const p = await fetchPlayers()
+      const myT = next.teams.find((t) => t.is_my_team)
+      const p = await fetchPlayers(myT ? { for_team_id: myT.id } : {})
       setPlayers(p.players)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -378,7 +418,16 @@ export function Draft({ onReset }: DraftProps) {
                       </td>
                       <td className="px-2 py-1.5 text-slate-700">{p.positions.join('/') || '-'}</td>
                       <td className="px-2 py-1.5 text-slate-700">{p.wnba_team || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{p.value.toFixed(2)}</td>
+                      <td
+                        className="px-2 py-1.5 text-right tabular-nums font-medium"
+                        title={
+                          p.marginal_value != null
+                            ? `Marginal value to ${myTeam?.name ?? 'my team'}: ${p.marginal_value.toFixed(2)}\nAbsolute (z-score sum × factors): ${p.value.toFixed(2)}`
+                            : `Absolute value: ${p.value.toFixed(2)}`
+                        }
+                      >
+                        {(p.marginal_value ?? p.value).toFixed(2)}
+                      </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.games_played}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.points}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.rebounds}</td>
@@ -424,13 +473,35 @@ export function Draft({ onReset }: DraftProps) {
                 })
               })}
             </ul>
-            <div className="mt-3 grid grid-cols-5 gap-2 text-center">
-              {CATS.map((c) => (
-                <div key={c} className="rounded bg-slate-50 px-2 py-1.5">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-500">{CAT_LABEL[c]}</div>
-                  <div className="text-sm font-semibold tabular-nums">{myCatTotals[c]}</div>
-                </div>
-              ))}
+            <div className="mt-3">
+              <div className="text-xs text-slate-500 mb-1">
+                Pace ({myRosters.length}/6 picks){' '}
+                <span className="text-slate-400">— vs avg team end-of-draft target</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {CATS.map((c) => {
+                  const info = myCatStatus?.by_cat?.[c]
+                  const ratio = info?.ratio ?? null
+                  const target = info?.target_end_of_draft
+                  return (
+                    <div
+                      key={c}
+                      className={'rounded border px-2 py-1.5 text-center ' + paceColor(ratio)}
+                      title={
+                        info
+                          ? `Current ${info.current} / expected so far ${info.expected_so_far} / end-of-draft target ${info.target_end_of_draft}`
+                          : 'No picks yet'
+                      }
+                    >
+                      <div className="text-[10px] uppercase tracking-wide opacity-70">{CAT_LABEL[c]}</div>
+                      <div className="text-sm font-semibold tabular-nums">{myCatTotals[c]}</div>
+                      <div className="text-[10px] tabular-nums opacity-70">
+                        {ratio != null ? `${(ratio * 100).toFixed(0)}%` : target ? `→${Math.round(target)}` : '—'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </section>
 

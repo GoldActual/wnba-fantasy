@@ -18,13 +18,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Roster
-from app.value import PlayerValue, compute_player_values
+from app.models import Roster, Team
+from app.value import (
+    CATS,
+    PICKS_PER_TEAM,
+    PlayerValue,
+    aggregate_team_totals,
+    compute_marginal_value,
+    compute_pace_targets,
+    compute_player_values,
+)
 
 router = APIRouter()
 
 
-def _serialize(v: PlayerValue, drafted_by: dict[int, int]) -> dict:
+def _serialize(
+    v: PlayerValue,
+    drafted_by: dict[int, int],
+    marginal_by_pid: dict[int, float] | None = None,
+) -> dict:
     return {
         "player_id": v.player_id,
         "name": v.name,
@@ -55,6 +67,11 @@ def _serialize(v: PlayerValue, drafted_by: dict[int, int]) -> dict:
         },
         "value": round(v.value, 3),
         "raw_value": round(v.raw_value, 3),
+        "marginal_value": (
+            round(marginal_by_pid[v.player_id], 3)
+            if marginal_by_pid is not None and v.player_id in marginal_by_pid
+            else None
+        ),
         "factors": {
             "availability": round(v.availability_factor, 3),
             "position": round(v.position_factor, 3),
@@ -72,9 +89,30 @@ def list_players(
     hide_rookies: bool = Query(default=False),
     rookies_only: bool = Query(default=False),
     limit: int | None = Query(default=None, ge=1, le=1000),
+    for_team_id: int | None = Query(default=None),
 ) -> dict:
     values = compute_player_values(db)
     drafted_by = {r.player_id: r.team_id for r in db.scalars(select(Roster)).all()}
+
+    marginal_by_pid: dict[int, float] | None = None
+    if for_team_id is not None:
+        n_teams = len(db.scalars(select(Team).where(Team.is_active.is_(True))).all())
+        if n_teams > 0:
+            pace = compute_pace_targets(values, n_teams=n_teams)
+            team_pids = {
+                r.player_id
+                for r in db.scalars(select(Roster).where(Roster.team_id == for_team_id)).all()
+            }
+            team_totals = aggregate_team_totals(values, team_pids)
+            picks_made_by_team = len(team_pids)
+            marginal_by_pid = {
+                v.player_id: compute_marginal_value(
+                    v, team_totals, pace, picks_made_by_team
+                )
+                for v in values
+            }
+            # Re-sort the list by marginal value when team-aware ranking is requested.
+            values.sort(key=lambda v: marginal_by_pid[v.player_id], reverse=True)
 
     if search:
         q = search.lower().strip()
@@ -93,5 +131,6 @@ def list_players(
 
     return {
         "count": len(values),
-        "players": [_serialize(v, drafted_by) for v in values],
+        "for_team_id": for_team_id,
+        "players": [_serialize(v, drafted_by, marginal_by_pid) for v in values],
     }

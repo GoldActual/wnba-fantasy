@@ -68,12 +68,25 @@ export type Player = {
   }
   value: number
   raw_value: number
+  marginal_value: number | null
   factors: {
     availability: number
     position: number
     injury: number
     rookie: number
   }
+}
+
+export type CatPaceInfo = {
+  current: number
+  target_end_of_draft: number
+  expected_so_far: number
+  ratio: number | null
+}
+
+export type TeamCatStatus = {
+  totals: Record<'points' | 'rebounds' | 'assists' | 'steals' | 'blocks', number>
+  by_cat: Record<'points' | 'rebounds' | 'assists' | 'steals' | 'blocks', CatPaceInfo>
 }
 
 export type Slot = 'G' | 'F' | 'C' | 'UTIL'
@@ -116,6 +129,8 @@ export type DraftState = {
   } | null
   is_complete: boolean
   roster_shape: Record<Slot, number>
+  pace_targets: Record<'points' | 'rebounds' | 'assists' | 'steals' | 'blocks', number>
+  team_cat_status: Record<string, TeamCatStatus>  // team_id (as string) -> status
 }
 
 export type TeamSetupItem = {
@@ -135,6 +150,7 @@ export type PlayersQuery = {
   hide_rookies?: boolean
   rookies_only?: boolean
   limit?: number
+  for_team_id?: number
 }
 
 export const fetchPlayers = (q: PlayersQuery = {}) =>

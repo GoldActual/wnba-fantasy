@@ -212,3 +212,106 @@ def compute_player_values(db: Session) -> list[PlayerValue]:
 
     out.sort(key=lambda v: v.value, reverse=True)
     return out
+
+
+# ----- team-context-aware (rotis) value -----
+
+# 2024 final standings showed: top teams had 0 last-place finishes; a single
+# punted category sinks rotis rank-sum. So we boost the weight on cats where
+# my team is behind pace, encouraging the draft to fill weak cats over
+# stacking strengths I've already locked.
+DEFAULT_DEFICIT_BIAS = 0.5
+
+# Roster shape used for pace targets — must stay in sync with draft router.
+PICKS_PER_TEAM = 6
+
+
+def compute_pace_targets(
+    values: list[PlayerValue],
+    n_teams: int,
+    picks_per_team: int = PICKS_PER_TEAM,
+) -> dict[str, float]:
+    """Per-team end-of-draft target for each of the 5 cats.
+
+    Take the top (n_teams × picks_per_team) basis-stat rows by absolute value
+    (proxy for "who will actually be drafted"), sum each cat, divide by
+    n_teams. A team finishing at this pace would be the league average."""
+    pool_size = n_teams * picks_per_team
+    pool = sorted(values, key=lambda v: v.value, reverse=True)[:pool_size]
+    if not pool or n_teams <= 0:
+        return {c: 0.0 for c in CATS}
+    return {
+        c: sum(getattr(v, c) for v in pool) / n_teams
+        for c in CATS
+    }
+
+
+def aggregate_team_totals(
+    values: list[PlayerValue],
+    rostered_player_ids: set[int],
+) -> dict[str, int]:
+    """Sum basis-stat cat totals across a given set of players."""
+    out = {c: 0 for c in CATS}
+    for v in values:
+        if v.player_id not in rostered_player_ids:
+            continue
+        for c in CATS:
+            out[c] += getattr(v, c)
+    return out
+
+
+def compute_marginal_value(
+    pv: PlayerValue,
+    team_totals: dict[str, int],
+    pace_targets: dict[str, float],
+    picks_made_by_team: int,
+    picks_per_team: int = PICKS_PER_TEAM,
+    bias: float = DEFAULT_DEFICIT_BIAS,
+) -> float:
+    """A z-score sum where cats my team is *behind pace so far* get extra
+    weight. Pace-so-far = pace_target × (my_picks / picks_per_team).
+
+    Per-cat weight = 1 + bias × deficit_share, where deficit_share is
+    clamped to [0, 1]. Pre-draft (0 picks): expected = 0, deficit = 0,
+    weight = 1.0 — marginal collapses to absolute value cleanly. On
+    pace: weight = 1.0. Behind pace: weight up to 1 + bias.
+    """
+    final = 0.0
+    for c in CATS:
+        target = pace_targets.get(c, 0.0)
+        cur = team_totals.get(c, 0)
+        expected_so_far = target * (picks_made_by_team / picks_per_team) if picks_per_team else 0.0
+        if expected_so_far > 0:
+            deficit_share = max(0.0, min(1.0, (expected_so_far - cur) / expected_so_far))
+        else:
+            deficit_share = 0.0
+        weight = 1.0 + bias * deficit_share
+        z = getattr(pv, f"z_{c}")
+        final += z * weight
+    return final
+
+
+def per_cat_pace_status(
+    team_totals: dict[str, int],
+    pace_targets: dict[str, float],
+    picks_made_by_team: int,
+    picks_per_team: int = PICKS_PER_TEAM,
+) -> dict[str, dict]:
+    """For the cat-strength panel: for each cat, show current / expected
+    so far and a 0-1 ratio that the UI colors red/amber/green.
+
+    Expected-so-far = pace_target × (picks_made / picks_per_team) — a
+    linear ramp toward the end-of-draft target."""
+    out: dict[str, dict] = {}
+    for c in CATS:
+        target = pace_targets.get(c, 0.0)
+        expected_so_far = target * (picks_made_by_team / picks_per_team) if picks_per_team else 0.0
+        cur = team_totals.get(c, 0)
+        ratio = (cur / expected_so_far) if expected_so_far > 0 else (1.0 if cur == 0 else float("inf"))
+        out[c] = {
+            "current": cur,
+            "target_end_of_draft": round(target, 1),
+            "expected_so_far": round(expected_so_far, 1),
+            "ratio": round(ratio, 3) if ratio != float("inf") else None,
+        }
+    return out

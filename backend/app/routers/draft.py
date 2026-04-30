@@ -18,6 +18,12 @@ from starlette.responses import Response
 
 from app.db import get_db
 from app.models import Player, Roster, Team, Transaction
+from app.value import (
+    aggregate_team_totals,
+    compute_pace_targets,
+    compute_player_values,
+    per_cat_pace_status,
+)
 
 router = APIRouter()
 
@@ -219,6 +225,23 @@ def draft_state(db: Session = Depends(get_db)) -> dict:
         }
         is_complete = False
 
+    # Pace targets + per-team cat status. Skips computation if there are
+    # no teams yet (pre-setup) — saves a chunk of work on the empty path.
+    pace_targets: dict[str, float] = {}
+    team_cat_status: dict[int, dict] = {}
+    if teams:
+        values = compute_player_values(db)
+        pace_targets = compute_pace_targets(values, n_teams=len(teams))
+        rosters_by_team: dict[int, set[int]] = {t.id: set() for t in teams}
+        picks_count_by_team: dict[int, int] = {t.id: 0 for t in teams}
+        for r in rosters:
+            rosters_by_team[r.team_id].add(r.player_id)
+            picks_count_by_team[r.team_id] += 1
+        for t in teams:
+            totals = aggregate_team_totals(values, rosters_by_team[t.id])
+            status = per_cat_pace_status(totals, pace_targets, picks_count_by_team[t.id])
+            team_cat_status[t.id] = {"totals": totals, "by_cat": status}
+
     return {
         "teams": [
             {
@@ -233,6 +256,8 @@ def draft_state(db: Session = Depends(get_db)) -> dict:
         "on_the_clock": on_clock,
         "is_complete": is_complete,
         "roster_shape": ROSTER_SHAPE,
+        "pace_targets": {k: round(v, 1) for k, v in pace_targets.items()},
+        "team_cat_status": team_cat_status,
     }
 
 
