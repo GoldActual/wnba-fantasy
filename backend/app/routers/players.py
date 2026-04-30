@@ -14,15 +14,17 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.models import Roster
 from app.value import PlayerValue, compute_player_values
 
 router = APIRouter()
 
 
-def _serialize(v: PlayerValue) -> dict:
+def _serialize(v: PlayerValue, drafted_by: dict[int, int]) -> dict:
     return {
         "player_id": v.player_id,
         "name": v.name,
@@ -35,6 +37,7 @@ def _serialize(v: PlayerValue) -> dict:
         "override_note": v.override_note,
         "stats_source": v.stats_source,
         "injury_status": v.injury_status,
+        "drafted_by_team_id": drafted_by.get(v.player_id),
         "totals": {
             "games_played": v.games_played,
             "points": v.points,
@@ -71,6 +74,7 @@ def list_players(
     limit: int | None = Query(default=None, ge=1, le=1000),
 ) -> dict:
     values = compute_player_values(db)
+    drafted_by = {r.player_id: r.team_id for r in db.scalars(select(Roster)).all()}
 
     if search:
         q = search.lower().strip()
@@ -89,5 +93,5 @@ def list_players(
 
     return {
         "count": len(values),
-        "players": [_serialize(v) for v in values],
+        "players": [_serialize(v, drafted_by) for v in values],
     }

@@ -55,6 +55,7 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     draft_slot: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_my_team: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, nullable=False)
 
     rosters: Mapped[list["Roster"]] = relationship(back_populates="team", cascade="all, delete-orphan")
