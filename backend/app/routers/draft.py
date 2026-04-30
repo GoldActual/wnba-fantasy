@@ -42,7 +42,12 @@ class TeamSetupRequest(BaseModel):
 
 class PickRequest(BaseModel):
     player_id: int
-    slot: str  # 'G' | 'F' | 'C' | 'UTIL'
+    # Both optional. team_id defaults to the on-the-clock team. slot is
+    # auto-assigned server-side using the most-restrictive eligible open
+    # slot (C → F → G → UTIL) — the user shouldn't have to think about
+    # slot bookkeeping during the draft.
+    team_id: int | None = None
+    slot: str | None = None
 
 
 # ----- helpers -----
@@ -87,6 +92,28 @@ def _team_slot_open(db: Session, team_id: int, slot: str) -> bool:
         ).all()
     )
     return used < ROSTER_SHAPE[slot]
+
+
+def _slot_usage(db: Session, team_id: int) -> dict[str, int]:
+    counts = {s: 0 for s in ROSTER_SHAPE}
+    for r in db.scalars(select(Roster).where(Roster.team_id == team_id)).all():
+        if r.slot in counts:
+            counts[r.slot] += 1
+    return counts
+
+
+def _auto_assign_slot(positions: list[str], team_id: int, db: Session) -> str | None:
+    """Pick the most-restrictive eligible open slot. Returns None if the
+    team has no open slot the player can fill (which only happens if the
+    team already has 6 picks — i.e. UTIL is also full)."""
+    used = _slot_usage(db, team_id)
+    pos_set = set(positions or [])
+    for slot in ("C", "F", "G"):  # most restrictive first
+        if slot in pos_set and used[slot] < ROSTER_SHAPE[slot]:
+            return slot
+    if used["UTIL"] < ROSTER_SHAPE["UTIL"]:
+        return "UTIL"
+    return None
 
 
 def _serialize_roster_row(r: Roster) -> dict:
@@ -214,15 +241,21 @@ def make_pick(req: PickRequest, db: Session = Depends(get_db)) -> dict:
     teams = _active_teams(db)
     if not teams:
         raise HTTPException(400, "no teams configured; run /api/teams/setup first")
-    if req.slot not in VALID_SLOTS:
-        raise HTTPException(400, f"invalid slot {req.slot!r}; must be one of {sorted(VALID_SLOTS)}")
 
     picks_made = len(db.scalars(select(Roster)).all())
     clock = _on_the_clock(teams, picks_made)
     if clock is None:
         raise HTTPException(409, "draft is complete; nothing on the clock")
-    team, round_num, slot_index = clock
-    if team is None:
+    on_clock_team, round_num, slot_index = clock
+
+    # Resolve target team: explicit team_id or default to on-the-clock.
+    if req.team_id is not None:
+        target_team = next((t for t in teams if t.id == req.team_id), None)
+        if target_team is None:
+            raise HTTPException(404, f"team {req.team_id} not found")
+    else:
+        target_team = on_clock_team
+    if target_team is None:
         raise HTTPException(500, f"on-the-clock slot {slot_index} not found in teams")
 
     player = db.get(Player, req.player_id)
@@ -232,20 +265,31 @@ def make_pick(req: PickRequest, db: Session = Depends(get_db)) -> dict:
     if already is not None:
         raise HTTPException(409, f"{player.name} is already on team {already.team_id}")
 
-    if not _slot_eligible(player.positions or [], req.slot):
-        raise HTTPException(
-            400,
-            f"{player.name} ({'/'.join(player.positions or []) or 'no positions'}) "
-            f"is not eligible for slot {req.slot}",
-        )
-    if not _team_slot_open(db, team.id, req.slot):
-        raise HTTPException(409, f"{team.name}'s {req.slot} slot is full")
+    # Resolve slot: explicit `slot` or auto-assigned. We still validate the
+    # auto-pick because a player like Awa Fam Thiam (no positions in DB)
+    # can only land in UTIL.
+    slot = req.slot
+    if slot is None:
+        slot = _auto_assign_slot(player.positions or [], target_team.id, db)
+        if slot is None:
+            raise HTTPException(409, f"{target_team.name} has no open slot for {player.name}")
+    else:
+        if slot not in VALID_SLOTS:
+            raise HTTPException(400, f"invalid slot {slot!r}; must be one of {sorted(VALID_SLOTS)}")
+        if not _slot_eligible(player.positions or [], slot):
+            raise HTTPException(
+                400,
+                f"{player.name} ({'/'.join(player.positions or []) or 'no positions'}) "
+                f"is not eligible for slot {slot}",
+            )
+        if not _team_slot_open(db, target_team.id, slot):
+            raise HTTPException(409, f"{target_team.name}'s {slot} slot is full")
 
     overall_pick = picks_made + 1
     roster = Roster(
-        team_id=team.id,
+        team_id=target_team.id,
         player_id=player.id,
-        slot=req.slot,
+        slot=slot,
         drafted_round=round_num,
         drafted_overall_pick=overall_pick,
     )
@@ -254,9 +298,9 @@ def make_pick(req: PickRequest, db: Session = Depends(get_db)) -> dict:
         transaction_type="draft",
         player_id=player.id,
         from_team_id=None,
-        to_team_id=team.id,
+        to_team_id=target_team.id,
         effective_date=date.today(),
-        notes=f"R{round_num}.P{overall_pick} {req.slot}",
+        notes=f"R{round_num}.P{overall_pick} {slot}",
     ))
     db.commit()
     return draft_state(db)

@@ -16,11 +16,6 @@ type DraftProps = {
   onReset: () => void
 }
 
-type PickPrompt = {
-  player: Player
-  eligibleOpenSlots: Slot[]
-}
-
 type Cats = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
 const CATS: Cats[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
 const CAT_LABEL: Record<Cats, string> = {
@@ -31,6 +26,7 @@ const CAT_LABEL: Record<Cats, string> = {
   blocks: 'BLK',
 }
 const ALL_SLOTS: Slot[] = ['G', 'F', 'C', 'UTIL']
+const POSITIONAL_SLOTS: Array<Exclude<Slot, 'UTIL'>> = ['G', 'F', 'C']
 
 function injuryBadge(status: string | null) {
   if (!status) return { dot: '🟢', label: 'Healthy', tone: 'text-emerald-700' }
@@ -39,26 +35,27 @@ function injuryBadge(status: string | null) {
   return { dot: '🟡', label: status, tone: 'text-amber-700' }
 }
 
-function eligibleOpenSlotsFor(player: Player, teamId: number, state: DraftState): Slot[] {
-  const usedBySlot: Record<Slot, number> = { G: 0, F: 0, C: 0, UTIL: 0 }
+/** Positions still needed on a team's roster. UTIL is always implicit and
+ *  not listed here — UTIL accepting anyone makes "fits remaining slots"
+ *  trivially true if it's the only open slot, which isn't useful. */
+function openPositionalNeeds(teamId: number, state: DraftState): Set<Exclude<Slot, 'UTIL'>> {
+  const used: Record<string, number> = { G: 0, F: 0, C: 0 }
   for (const r of state.rosters) {
-    if (r.team_id === teamId) usedBySlot[r.slot] += 1
+    if (r.team_id !== teamId) continue
+    if (r.slot === 'G' || r.slot === 'F' || r.slot === 'C') used[r.slot] += 1
   }
-  const out: Slot[] = []
-  const candidates: Slot[] = [...player.positions.filter((p) => p === 'G' || p === 'F' || p === 'C') as Slot[], 'UTIL']
-  for (const slot of ALL_SLOTS) {
-    if (!candidates.includes(slot)) continue
-    if (usedBySlot[slot] < state.roster_shape[slot]) out.push(slot)
+  const needs = new Set<Exclude<Slot, 'UTIL'>>()
+  for (const s of POSITIONAL_SLOTS) {
+    if (used[s] < state.roster_shape[s]) needs.add(s)
   }
-  // dedupe but keep order
-  return Array.from(new Set(out))
+  return needs
 }
 
 export function Draft({ onReset }: DraftProps) {
   const [state, setState] = useState<DraftState | null>(null)
   const [players, setPlayers] = useState<Player[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pickPrompt, setPickPrompt] = useState<PickPrompt | null>(null)
+  const [pickPrompt, setPickPrompt] = useState<Player | null>(null)
   const [busy, setBusy] = useState(false)
 
   // Filters / search
@@ -66,6 +63,7 @@ export function Draft({ onReset }: DraftProps) {
   const [positionFilter, setPositionFilter] = useState<'ALL' | 'G' | 'F' | 'C'>('ALL')
   const [rookieFilter, setRookieFilter] = useState<'all' | 'hide' | 'only'>('all')
   const [hideDrafted, setHideDrafted] = useState(true)
+  const [fitMyNeeds, setFitMyNeeds] = useState(false)
 
   const refresh = async () => {
     setError(null)
@@ -88,6 +86,13 @@ export function Draft({ onReset }: DraftProps) {
     return out
   }, [players])
 
+  const myTeam = state?.teams.find((t) => t.is_my_team) ?? null
+
+  const myNeeds = useMemo(
+    () => (state && myTeam ? openPositionalNeeds(myTeam.id, state) : new Set<Exclude<Slot, 'UTIL'>>()),
+    [state, myTeam],
+  )
+
   const filteredPlayers = useMemo(() => {
     if (!players) return []
     const q = search.trim().toLowerCase()
@@ -97,15 +102,21 @@ export function Draft({ onReset }: DraftProps) {
       if (rookieFilter === 'hide' && p.is_rookie) return false
       if (rookieFilter === 'only' && !p.is_rookie) return false
       if (hideDrafted && p.drafted_by_team_id != null) return false
+      if (fitMyNeeds && myNeeds.size > 0) {
+        const matches = p.positions.some((pp) =>
+          (pp === 'G' || pp === 'F' || pp === 'C') && myNeeds.has(pp),
+        )
+        if (!matches) return false
+      }
       return true
     })
-  }, [players, search, positionFilter, rookieFilter, hideDrafted])
-
-  const myTeam = state?.teams.find((t) => t.is_my_team) ?? null
+  }, [players, search, positionFilter, rookieFilter, hideDrafted, fitMyNeeds, myNeeds])
   const myRosters = useMemo(
     () => (state && myTeam ? state.rosters.filter((r) => r.team_id === myTeam.id) : []),
     [state, myTeam],
   )
+
+  const myTeamFull = !!state && !!myTeam && myRosters.length >= state.total_picks / state.teams.length
 
   const myCatTotals = useMemo(() => {
     const totals: Record<Cats, number> = { points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0 }
@@ -120,26 +131,14 @@ export function Draft({ onReset }: DraftProps) {
   const onClickPlayer = (p: Player) => {
     if (!state || !state.on_the_clock) return
     if (p.drafted_by_team_id != null) return // already gone
-    const slots = eligibleOpenSlotsFor(p, state.on_the_clock.team_id, state)
-    if (slots.length === 0) {
-      setError(
-        `${p.name} (${p.positions.join('/') || 'no pos'}) doesn't fit any open slot on ` +
-          state.on_the_clock.team_name,
-      )
-      return
-    }
-    if (slots.length === 1) {
-      void doPick(p.player_id, slots[0])
-      return
-    }
-    setPickPrompt({ player: p, eligibleOpenSlots: slots })
+    setPickPrompt(p)
   }
 
-  const doPick = async (player_id: number, slot: Slot) => {
+  const doPick = async (player_id: number, team_id?: number) => {
     setError(null)
     setBusy(true)
     try {
-      const next = await makePick(player_id, slot)
+      const next = await makePick(player_id, team_id)
       setState(next)
       const p = await fetchPlayers()
       setPlayers(p.players)
@@ -292,6 +291,19 @@ export function Draft({ onReset }: DraftProps) {
                 </button>
               ))}
             </div>
+            {myTeam && !myTeamFull && myNeeds.size > 0 && (
+              <label
+                className="inline-flex items-center gap-2 text-sm text-slate-700"
+                title={`Show only players whose positions match an open slot on ${myTeam.name}: ${[...myNeeds].join('/')}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={fitMyNeeds}
+                  onChange={(e) => setFitMyNeeds(e.target.checked)}
+                />
+                Fits my needs ({[...myNeeds].join('/')})
+              </label>
+            )}
             <label className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -303,6 +315,13 @@ export function Draft({ onReset }: DraftProps) {
             <span className="text-xs text-slate-500">
               {filteredPlayers.length} / {players.length}
             </span>
+          </div>
+          <div className="px-3 py-1.5 border-b border-slate-100 text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+            <span><span className="text-emerald-600">🟢</span> healthy</span>
+            <span><span className="text-amber-600">🟡</span> day-to-day</span>
+            <span><span className="text-red-600">🔴</span> out</span>
+            <span><span className="bg-amber-200 text-amber-900 px-1 rounded text-[10px]">🆕</span> rookie (NCAA projection)</span>
+            <span className="ml-auto">click a player to draft them</span>
           </div>
           <div className="overflow-x-auto max-h-[70vh]">
             <table className="w-full text-sm">
@@ -458,30 +477,59 @@ export function Draft({ onReset }: DraftProps) {
         </aside>
       </div>
 
-      {pickPrompt && (
-        <div className="fixed inset-0 grid place-items-center bg-slate-900/40 z-50">
-          <div className="bg-white rounded-xl shadow-lg p-6 w-96">
-            <h3 className="text-base font-semibold mb-2">
-              Pick {pickPrompt.player.name} into…
+      {pickPrompt && state && (
+        <div
+          className="fixed inset-0 grid place-items-center bg-slate-900/40 z-50"
+          onClick={() => setPickPrompt(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-lg p-6 w-[28rem]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold">
+              Draft <span className="text-slate-900">{pickPrompt.name}</span>
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              {pickPrompt.player.positions.join('/')} — {onClock?.team_name}
+              {pickPrompt.positions.join('/') || 'no position'}
+              {pickPrompt.wnba_team ? ` · ${pickPrompt.wnba_team}` : ''} · click any team
             </p>
             <div className="grid grid-cols-2 gap-2">
-              {pickPrompt.eligibleOpenSlots.map((s) => (
-                <button
-                  key={s}
-                  disabled={busy}
-                  onClick={() => doPick(pickPrompt.player.player_id, s)}
-                  className="rounded-md bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {s}
-                </button>
-              ))}
+              {[...state.teams]
+                .sort((a, b) => a.draft_slot - b.draft_slot)
+                .map((t) => {
+                  const isClock = onClock?.team_id === t.id
+                  const teamRosterCount = state.rosters.filter((r) => r.team_id === t.id).length
+                  const teamFull = teamRosterCount >= state.total_picks / state.teams.length
+                  return (
+                    <button
+                      key={t.id}
+                      disabled={busy || teamFull}
+                      onClick={() => doPick(pickPrompt.player_id, t.id)}
+                      className={
+                        'rounded-md px-3 py-2 text-sm font-medium border ' +
+                        (isClock
+                          ? 'bg-amber-400 text-slate-900 border-amber-500 hover:bg-amber-300'
+                          : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-50') +
+                        ' disabled:opacity-40 disabled:cursor-not-allowed'
+                      }
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate">
+                          {t.is_my_team && '★ '}
+                          {t.name}
+                        </span>
+                        <span className="text-xs opacity-70 tabular-nums">{teamRosterCount}/6</span>
+                      </div>
+                      {isClock && (
+                        <div className="text-[10px] uppercase tracking-wide opacity-70">on the clock</div>
+                      )}
+                    </button>
+                  )
+                })}
             </div>
             <button
               onClick={() => setPickPrompt(null)}
-              className="mt-3 text-xs text-slate-500 hover:underline"
+              className="mt-4 text-xs text-slate-500 hover:underline"
             >
               Cancel
             </button>

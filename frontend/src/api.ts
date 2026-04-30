@@ -147,8 +147,8 @@ export const setupTeams = (teams: TeamSetupItem[], force = false) =>
 
 export const resetDraft = () => apiDelete<{ status: string }>('/api/teams')
 
-export const makePick = (player_id: number, slot: Slot) =>
-  apiPost<DraftState>('/api/draft/pick', { player_id, slot })
+export const makePick = (player_id: number, team_id?: number) =>
+  apiPost<DraftState>('/api/draft/pick', { player_id, team_id })
 
 export const undoLastPick = () => apiDelete<DraftState>('/api/draft/pick/last')
 

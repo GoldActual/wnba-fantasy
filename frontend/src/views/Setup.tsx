@@ -10,11 +10,19 @@ const DEFAULT_COUNT = 8
 const MIN_TEAMS = 2
 const MAX_TEAMS = 16
 
+// Cole's actual league owners (2026: Sean is the new 8th). Pre-fills only
+// when nothing already exists for that slot, so editing one name doesn't
+// reset the others when count changes.
+const DEFAULT_OWNER_NAMES = ['Cole', 'Tom', 'Eric', 'Nik', 'Bryan', 'Jay', 'Jordan', 'Sean']
+const DEFAULT_MY_TEAM_NAME = 'Cole'
+
 const buildDefaultTeams = (n: number, prev: TeamSetupItem[] = []): TeamSetupItem[] =>
   Array.from({ length: n }, (_, i) => {
     const slot = i + 1
     const existing = prev.find((t) => t.draft_slot === slot)
-    return existing ?? { name: `Team ${slot}`, draft_slot: slot, is_my_team: false }
+    if (existing) return existing
+    const name = DEFAULT_OWNER_NAMES[i] || `Team ${slot}`
+    return { name, draft_slot: slot, is_my_team: name === DEFAULT_MY_TEAM_NAME }
   })
 
 export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
