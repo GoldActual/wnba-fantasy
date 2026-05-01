@@ -565,6 +565,16 @@ export function Draft({ onReset }: DraftProps) {
                           {' · '}{p.totals.steals}S
                           {' · '}{p.totals.blocks}B
                         </div>
+                        {/* Injury detail sub-line (mobile only) — desktop has the
+                            hover tooltip on the dot, but tap doesn't trigger title=""
+                            on phone. Show status + reason + ETA inline. */}
+                        {p.injury_status && (
+                          <div className={`sm:hidden mt-0.5 text-[11px] ${inj.tone}`}>
+                            {p.injury_status}
+                            {p.injury_description && <> · {p.injury_description}</>}
+                            {p.injury_return_date && <> · ETA {p.injury_return_date}</>}
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.positions.join('/') || '-'}</td>
                       <td className="hidden sm:table-cell px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.wnba_team || '-'}</td>
