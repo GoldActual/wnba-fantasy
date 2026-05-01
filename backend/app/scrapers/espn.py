@@ -66,12 +66,22 @@ def _parse_roster(html: str, slug: str) -> list[EspnPlayer]:
     return players
 
 
-def fetch_player_index(session: RateLimitedSession | None = None) -> list[EspnPlayer]:
-    """Walk every team roster and collect (espn_id, name, team_slug) tuples."""
+def fetch_player_index(
+    session: RateLimitedSession | None = None,
+    verbose: bool = False,
+) -> list[EspnPlayer]:
+    """Walk every team roster and collect (espn_id, name, team_slug) tuples.
+
+    Set verbose=True to print per-team progress. The 15-team walk takes
+    ~45 seconds at the rate-limited pace; without progress the refresh
+    script appears frozen.
+    """
     sess = session or RateLimitedSession()
     slugs = fetch_team_slugs(sess)
     all_players: list[EspnPlayer] = []
-    for slug in slugs:
+    for i, slug in enumerate(slugs, 1):
+        if verbose:
+            print(f"      [{i}/{len(slugs)}] fetching {slug}...", flush=True)
         r = sess.get(ROSTER_URL.format(slug=slug))
         if not r.ok:
             # log, but keep going — one team failing shouldn't kill the whole pass

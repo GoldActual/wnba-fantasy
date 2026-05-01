@@ -220,8 +220,8 @@ def main() -> None:
         print(f"      fetched {len(wnba_players)} players (inserted {ins}, updated {upd})")
         db.commit()
 
-        print("[2/4] ESPN team rosters — ESPN IDs")
-        espn_players = espn.fetch_player_index(sess)
+        print("[2/4] ESPN team rosters — ESPN IDs", flush=True)
+        espn_players = espn.fetch_player_index(sess, verbose=True)
         matched, unmatched = attach_espn_ids(db, espn_players)
         print(f"      fetched {len(espn_players)} ESPN players (matched {matched}, unmatched {len(unmatched)})")
         if unmatched:
