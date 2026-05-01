@@ -28,13 +28,13 @@ function App() {
 
   if (mode === 'loading') {
     return (
-      <main className="min-h-screen bg-slate-50 grid place-items-center">
+      <main className="min-h-screen bg-slate-50 dark:bg-slate-950 grid place-items-center">
         {error ? (
-          <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 max-w-md">
+          <div className="rounded-md bg-red-50 border border-red-200 dark:bg-red-950/40 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-300 max-w-md">
             {error}
           </div>
         ) : (
-          <p className="text-slate-500">Loading…</p>
+          <p className="text-slate-500 dark:text-slate-400">Loading…</p>
         )}
       </main>
     )

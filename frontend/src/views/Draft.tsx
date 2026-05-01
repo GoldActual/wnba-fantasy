@@ -11,6 +11,7 @@ import {
   type RosterEntry,
   type Slot,
 } from '../api'
+import { ThemeToggle } from '../components/ThemeToggle'
 
 type DraftProps = {
   onReset: () => void
@@ -33,6 +34,101 @@ function injuryBadge(status: string | null) {
   const s = status.toLowerCase()
   if (s.includes('out')) return { dot: '🔴', label: status, tone: 'text-red-700' }
   return { dot: '🟡', label: status, tone: 'text-amber-700' }
+}
+
+type Standing = {
+  team_id: number
+  team_name: string
+  is_my_team: boolean
+  totals: Record<Cats, number>
+  ranks: Record<Cats, number>
+  rankSum: number
+}
+
+/** Rotis projected finish: per cat, rank teams by total (highest = #1).
+ *  Lowest sum-of-ranks wins. Mirrors how 2024 league standings worked. */
+function projectedStandings(state: DraftState): Standing[] {
+  const out: Standing[] = state.teams.map((t) => {
+    const status = state.team_cat_status[String(t.id)]
+    const totals = (status?.totals ?? {
+      points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0,
+    }) as Record<Cats, number>
+    return {
+      team_id: t.id,
+      team_name: t.name,
+      is_my_team: !!t.is_my_team,
+      totals,
+      ranks: { points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0 },
+      rankSum: 0,
+    }
+  })
+  for (const cat of CATS) {
+    const sorted = [...out].sort((a, b) => b.totals[cat] - a.totals[cat])
+    sorted.forEach((s, i) => {
+      const team = out.find((o) => o.team_id === s.team_id)!
+      team.ranks[cat] = i + 1
+    })
+  }
+  for (const s of out) s.rankSum = CATS.reduce((acc, c) => acc + s.ranks[c], 0)
+  return out.sort((a, b) => a.rankSum - b.rankSum)
+}
+
+function FinalStandings({ state, myTeamId }: { state: DraftState; myTeamId: number | null }) {
+  const standings = useMemo(() => projectedStandings(state), [state])
+  const winner = standings[0]
+  return (
+    <section className="max-w-7xl mx-auto px-6 mt-4">
+      <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-5 py-4">
+        <div className="flex flex-wrap items-baseline gap-2 mb-3">
+          <h2 className="text-lg font-semibold text-emerald-900 dark:text-emerald-200">
+            Draft complete · projected finish
+          </h2>
+          <span className="text-sm text-emerald-800 dark:text-emerald-300">
+            Winner if everyone hits their basis stats: <strong>{winner.team_name}</strong>
+            {' '}(rank-sum {winner.rankSum})
+          </span>
+        </div>
+        <div className="overflow-x-auto rounded border border-emerald-200/80 dark:border-emerald-900/60 bg-white dark:bg-slate-900">
+          <table className="w-full text-sm">
+            <thead className="bg-emerald-100/60 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-300">
+              <tr className="text-left">
+                <th className="px-3 py-2 w-10 text-right">#</th>
+                <th className="px-3 py-2">Owner</th>
+                <th className="px-3 py-2 w-16 text-right">Σ rank</th>
+                {CATS.map((c) => (
+                  <th key={c} className="px-3 py-2 w-20 text-right">{CAT_LABEL[c]}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {standings.map((s, idx) => (
+                <tr
+                  key={s.team_id}
+                  className={
+                    'border-t border-emerald-100 dark:border-emerald-900/60 ' +
+                    (s.team_id === myTeamId ? 'bg-amber-50 dark:bg-amber-950/30 font-medium' : '')
+                  }
+                >
+                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500 dark:text-slate-400">{idx + 1}</td>
+                  <td className="px-3 py-1.5">
+                    {s.is_my_team && <span className="mr-1">★</span>}
+                    {s.team_name}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{s.rankSum}</td>
+                  {CATS.map((c) => (
+                    <td key={c} className="px-3 py-1.5 text-right tabular-nums">
+                      <span className="text-slate-900 dark:text-slate-100">{s.totals[c]}</span>
+                      <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">#{s.ranks[c]}</span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 /** Positions still needed on a team's roster. UTIL is always implicit and
@@ -160,10 +256,10 @@ export function Draft({ onReset }: DraftProps) {
   }, [myCatStatus, myRosters, playerById])
 
   const paceColor = (ratio: number | null): string => {
-    if (ratio == null) return 'bg-slate-100 text-slate-600 border-slate-200'
-    if (ratio >= 0.95) return 'bg-emerald-50 text-emerald-800 border-emerald-200'
-    if (ratio >= 0.75) return 'bg-amber-50 text-amber-800 border-amber-200'
-    return 'bg-red-50 text-red-800 border-red-200'
+    if (ratio == null) return 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+    if (ratio >= 0.95) return 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900'
+    if (ratio >= 0.75) return 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'
+    return 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900'
   }
 
   const onClickPlayer = (p: Player) => {
@@ -224,13 +320,13 @@ export function Draft({ onReset }: DraftProps) {
 
   if (!state || !players) {
     return (
-      <main className="min-h-screen bg-slate-50 text-slate-900 grid place-items-center">
+      <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 grid place-items-center">
         {error ? (
-          <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 max-w-md">
+          <div className="rounded-md bg-red-50 border border-red-200 dark:bg-red-950/40 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-300 max-w-md">
             {error}
           </div>
         ) : (
-          <p className="text-slate-500">Loading draft…</p>
+          <p className="text-slate-500 dark:text-slate-400">Loading draft…</p>
         )}
       </main>
     )
@@ -239,79 +335,86 @@ export function Draft({ onReset }: DraftProps) {
   const onClock = state.on_the_clock
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      <header className="border-b border-slate-200 bg-white">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans">
+      <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center gap-4">
           <h1 className="text-xl font-semibold">WNBA Fantasy Draft</h1>
           {onClock ? (
             <div className="flex items-baseline gap-2 text-sm">
-              <span className="text-slate-500">On the clock:</span>
+              <span className="text-slate-500 dark:text-slate-400">On the clock:</span>
               <span className="font-semibold">{onClock.team_name}</span>
-              <span className="text-slate-500">
+              <span className="text-slate-500 dark:text-slate-400">
                 R{onClock.round}.P{onClock.overall_pick}
                 {' · '}
                 Pick {onClock.overall_pick} of {state.total_picks}
               </span>
             </div>
           ) : (
-            <span className="text-sm font-medium text-emerald-700">Draft complete</span>
+            <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Draft complete</span>
           )}
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={onUndo}
               disabled={busy || state.picks_made === 0}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+              className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
             >
               Undo
             </button>
             <a
               href={draftCsvUrl}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+              className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               CSV
             </a>
             <button
               onClick={onResetDraft}
               disabled={busy}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-300 disabled:opacity-50"
+              className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-300 dark:hover:bg-red-950/40 dark:hover:border-red-900 disabled:opacity-50"
             >
               Reset
             </button>
+            <ThemeToggle />
           </div>
         </div>
       </header>
 
       {error && (
-        <div className="max-w-7xl mx-auto px-6 mt-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="max-w-7xl mx-auto px-6 mt-4 rounded-md bg-red-50 border border-red-200 dark:bg-red-950/40 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       )}
 
+      {state.is_complete && (
+        <FinalStandings state={state} myTeamId={myTeam?.id ?? null} />
+      )}
+
       <div className="max-w-7xl mx-auto px-6 py-4 grid grid-cols-12 gap-4">
-        <section className="col-span-12 lg:col-span-8 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="p-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
+        <section className="col-span-12 lg:col-span-8 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm overflow-hidden">
+          <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2">
             <input
               type="search"
               placeholder="Search player…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-56 focus:border-slate-500 focus:outline-none"
+              className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-3 py-1.5 text-sm w-56 focus:border-slate-500 dark:focus:border-slate-400 focus:outline-none"
             />
-            <div className="inline-flex rounded-md border border-slate-300 text-sm overflow-hidden">
+            <div className="inline-flex rounded-md border border-slate-300 dark:border-slate-700 text-sm overflow-hidden">
               {(['ALL', 'G', 'F', 'C'] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPositionFilter(p)}
                   className={
                     'px-3 py-1.5 ' +
-                    (positionFilter === p ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100')
+                    (positionFilter === p
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800')
                   }
                 >
                   {p === 'ALL' ? 'All' : p}
                 </button>
               ))}
             </div>
-            <div className="inline-flex rounded-md border border-slate-300 text-sm overflow-hidden">
+            <div className="inline-flex rounded-md border border-slate-300 dark:border-slate-700 text-sm overflow-hidden">
               {(
                 [
                   ['all', 'All'],
@@ -324,7 +427,9 @@ export function Draft({ onReset }: DraftProps) {
                   onClick={() => setRookieFilter(k)}
                   className={
                     'px-3 py-1.5 ' +
-                    (rookieFilter === k ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100')
+                    (rookieFilter === k
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800')
                   }
                 >
                   {label}
@@ -333,7 +438,7 @@ export function Draft({ onReset }: DraftProps) {
             </div>
             {myTeam && !myTeamFull && myNeeds.size > 0 && (
               <label
-                className="inline-flex items-center gap-2 text-sm text-slate-700"
+                className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
                 title={`Show only players whose positions match an open slot on ${myTeam.name}: ${[...myNeeds].join('/')}`}
               >
                 <input
@@ -344,7 +449,7 @@ export function Draft({ onReset }: DraftProps) {
                 Fits my needs ({[...myNeeds].join('/')})
               </label>
             )}
-            <label className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
+            <label className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
                 checked={hideDrafted}
@@ -352,20 +457,20 @@ export function Draft({ onReset }: DraftProps) {
               />
               Hide drafted
             </label>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
               {filteredPlayers.length} / {players.length}
             </span>
           </div>
-          <div className="px-3 py-1.5 border-b border-slate-100 text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
-            <span><span className="text-emerald-600">🟢</span> healthy</span>
-            <span><span className="text-amber-600">🟡</span> day-to-day</span>
-            <span><span className="text-red-600">🔴</span> out</span>
-            <span><span className="bg-amber-200 text-amber-900 px-1 rounded text-[10px]">🆕</span> rookie (NCAA projection)</span>
+          <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
+            <span><span className="text-emerald-600 dark:text-emerald-400">🟢</span> healthy</span>
+            <span><span className="text-amber-600 dark:text-amber-400">🟡</span> day-to-day</span>
+            <span><span className="text-red-600 dark:text-red-400">🔴</span> out</span>
+            <span><span className="bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100 px-1 rounded text-[10px]">🆕</span> rookie (NCAA projection)</span>
             <span className="ml-auto">click a player to draft them</span>
           </div>
           <div className="overflow-x-auto max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600 sticky top-0">
+              <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-400 sticky top-0">
                 <tr className="text-left">
                   <th className="px-2 py-2 w-10 text-right">#</th>
                   <th className="px-2 py-2">Player</th>
@@ -389,14 +494,14 @@ export function Draft({ onReset }: DraftProps) {
                       key={p.player_id}
                       onClick={() => !drafted && onClickPlayer(p)}
                       className={
-                        'border-t border-slate-100 ' +
+                        'border-t border-slate-100 dark:border-slate-800 ' +
                         (drafted
-                          ? 'bg-slate-100 text-slate-400 line-through cursor-not-allowed'
-                          : 'hover:bg-amber-50 cursor-pointer ') +
-                        (!drafted && p.is_rookie ? 'bg-amber-50/40' : '')
+                          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-600 line-through cursor-not-allowed'
+                          : 'hover:bg-amber-50 dark:hover:bg-amber-950/30 cursor-pointer ') +
+                        (!drafted && p.is_rookie ? 'bg-amber-50/40 dark:bg-amber-950/20' : '')
                       }
                     >
-                      <td className="px-2 py-1.5 text-right text-slate-500 tabular-nums">{idx + 1}</td>
+                      <td className="px-2 py-1.5 text-right text-slate-500 dark:text-slate-400 tabular-nums">{idx + 1}</td>
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1.5">
                           <span title={inj.label} className={inj.tone}>{inj.dot}</span>
@@ -405,19 +510,19 @@ export function Draft({ onReset }: DraftProps) {
                               title={`🆕 Rookie — projected from ${p.school || 'NCAA'}; high uncertainty${
                                 p.override_note ? ` · ${p.override_note}` : ''
                               }`}
-                              className="rounded bg-amber-200 text-amber-900 text-[10px] font-medium px-1 py-0.5"
+                              className="rounded bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100 text-[10px] font-medium px-1 py-0.5"
                             >
                               🆕
                             </span>
                           )}
                           <span className="font-medium">{p.name}</span>
                           {p.is_rookie && p.draft_pick != null && (
-                            <span className="text-xs text-slate-500">#{p.draft_pick}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">#{p.draft_pick}</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-2 py-1.5 text-slate-700">{p.positions.join('/') || '-'}</td>
-                      <td className="px-2 py-1.5 text-slate-700">{p.wnba_team || '-'}</td>
+                      <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.positions.join('/') || '-'}</td>
+                      <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.wnba_team || '-'}</td>
                       <td
                         className="px-2 py-1.5 text-right tabular-nums font-medium"
                         title={
@@ -443,10 +548,10 @@ export function Draft({ onReset }: DraftProps) {
         </section>
 
         <aside className="col-span-12 lg:col-span-4 space-y-4">
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold">My team</h2>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 {myTeam ? `${myTeam.name} · slot ${myTeam.draft_slot}` : 'Pick a team in setup'}
               </span>
             </div>
@@ -459,13 +564,13 @@ export function Draft({ onReset }: DraftProps) {
                   return (
                     <li
                       key={`${slot}-${i}`}
-                      className="flex items-center justify-between rounded border border-slate-200 px-3 py-1.5 text-sm"
+                      className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-sm"
                     >
-                      <span className="text-slate-500 w-12 text-xs uppercase tracking-wide">{slot}</span>
-                      <span className={r ? 'text-slate-900' : 'text-slate-300 italic'}>
+                      <span className="text-slate-500 dark:text-slate-400 w-12 text-xs uppercase tracking-wide">{slot}</span>
+                      <span className={r ? 'text-slate-900 dark:text-slate-100' : 'text-slate-300 dark:text-slate-600 italic'}>
                         {r ? r.player.name : '—'}
                       </span>
-                      <span className="text-xs text-slate-500 w-16 text-right">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 w-16 text-right">
                         {r?.player.wnba_team || ''}
                       </span>
                     </li>
@@ -474,9 +579,9 @@ export function Draft({ onReset }: DraftProps) {
               })}
             </ul>
             <div className="mt-3">
-              <div className="text-xs text-slate-500 mb-1">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
                 Pace ({myRosters.length}/6 picks){' '}
-                <span className="text-slate-400">— vs avg team end-of-draft target</span>
+                <span className="text-slate-400 dark:text-slate-500">— vs avg team end-of-draft target</span>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {CATS.map((c) => {
@@ -505,7 +610,7 @@ export function Draft({ onReset }: DraftProps) {
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-sm">
             <h2 className="text-sm font-semibold mb-2">Other teams</h2>
             <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
               {state.teams
@@ -517,26 +622,28 @@ export function Draft({ onReset }: DraftProps) {
                     <details
                       key={t.id}
                       className={
-                        'rounded border border-slate-200 ' +
-                        (onClock?.team_id === t.id ? 'bg-amber-50 border-amber-300' : '')
+                        'rounded border border-slate-200 dark:border-slate-800 ' +
+                        (onClock?.team_id === t.id
+                          ? 'bg-amber-50 border-amber-300 dark:bg-amber-950/30 dark:border-amber-800'
+                          : '')
                       }
                     >
                       <summary className="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between">
                         <span>
-                          <span className="text-slate-500 mr-2">#{t.draft_slot}</span>
+                          <span className="text-slate-500 dark:text-slate-400 mr-2">#{t.draft_slot}</span>
                           {t.name}
                         </span>
-                        <span className="text-xs text-slate-500">{rs.length}/6</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">{rs.length}/6</span>
                       </summary>
                       <ul className="px-3 pb-2 text-xs">
-                        {rs.length === 0 && <li className="italic text-slate-400">no picks</li>}
+                        {rs.length === 0 && <li className="italic text-slate-400 dark:text-slate-500">no picks</li>}
                         {rs.map((r) => (
                           <li key={r.roster_id} className="flex justify-between py-0.5">
                             <span>
-                              <span className="text-slate-400 mr-1">{r.slot}</span>
+                              <span className="text-slate-400 dark:text-slate-500 mr-1">{r.slot}</span>
                               {r.player.name}
                             </span>
-                            <span className="text-slate-400">P{r.drafted_overall_pick}</span>
+                            <span className="text-slate-400 dark:text-slate-500">P{r.drafted_overall_pick}</span>
                           </li>
                         ))}
                       </ul>
@@ -550,17 +657,17 @@ export function Draft({ onReset }: DraftProps) {
 
       {pickPrompt && state && (
         <div
-          className="fixed inset-0 grid place-items-center bg-slate-900/40 z-50"
+          className="fixed inset-0 grid place-items-center bg-slate-900/40 dark:bg-black/60 z-50"
           onClick={() => setPickPrompt(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-lg p-6 w-[28rem]"
+            className="bg-white dark:bg-slate-900 dark:border dark:border-slate-800 rounded-xl shadow-lg p-6 w-[28rem]"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold">
-              Draft <span className="text-slate-900">{pickPrompt.name}</span>
+              Draft <span className="text-slate-900 dark:text-slate-100">{pickPrompt.name}</span>
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               {pickPrompt.positions.join('/') || 'no position'}
               {pickPrompt.wnba_team ? ` · ${pickPrompt.wnba_team}` : ''} · click any team
             </p>
@@ -579,8 +686,8 @@ export function Draft({ onReset }: DraftProps) {
                       className={
                         'rounded-md px-3 py-2 text-sm font-medium border ' +
                         (isClock
-                          ? 'bg-amber-400 text-slate-900 border-amber-500 hover:bg-amber-300'
-                          : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-50') +
+                          ? 'bg-amber-400 text-slate-900 border-amber-500 hover:bg-amber-300 dark:bg-amber-500 dark:border-amber-600 dark:hover:bg-amber-400'
+                          : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-700') +
                         ' disabled:opacity-40 disabled:cursor-not-allowed'
                       }
                     >
@@ -600,7 +707,7 @@ export function Draft({ onReset }: DraftProps) {
             </div>
             <button
               onClick={() => setPickPrompt(null)}
-              className="mt-4 text-xs text-slate-500 hover:underline"
+              className="mt-4 text-xs text-slate-500 dark:text-slate-400 hover:underline"
             >
               Cancel
             </button>
