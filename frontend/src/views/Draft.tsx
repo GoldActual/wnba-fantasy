@@ -77,7 +77,7 @@ function FinalStandings({ state, myTeamId }: { state: DraftState; myTeamId: numb
   const standings = useMemo(() => projectedStandings(state), [state])
   const winner = standings[0]
   return (
-    <section className="max-w-7xl mx-auto px-6 mt-4">
+    <section className="max-w-7xl mx-auto px-3 sm:px-6 mt-4">
       <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-5 py-4">
         <div className="flex flex-wrap items-baseline gap-2 mb-3">
           <h2 className="text-lg font-semibold text-emerald-900 dark:text-emerald-200">
@@ -337,7 +337,7 @@ export function Draft({ onReset }: DraftProps) {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans">
       <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="text-xl font-semibold">WNBA Fantasy Draft</h1>
           {onClock ? (
             <div className="flex items-baseline gap-2 text-sm">
@@ -379,8 +379,10 @@ export function Draft({ onReset }: DraftProps) {
       </header>
 
       {error && (
-        <div className="max-w-7xl mx-auto px-6 mt-4 rounded-md bg-red-50 border border-red-200 dark:bg-red-950/40 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-          {error}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 mt-4">
+          <div className="rounded-md bg-red-50 border border-red-200 dark:bg-red-950/40 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+            {error}
+          </div>
         </div>
       )}
 
@@ -388,7 +390,7 @@ export function Draft({ onReset }: DraftProps) {
         <FinalStandings state={state} myTeamId={myTeam?.id ?? null} />
       )}
 
-      <div className="max-w-7xl mx-auto px-6 py-4 grid grid-cols-12 gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 grid grid-cols-12 gap-4">
         <section className="col-span-12 lg:col-span-8 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-sm overflow-hidden">
           <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2">
             <input
@@ -475,14 +477,14 @@ export function Draft({ onReset }: DraftProps) {
                   <th className="px-2 py-2 w-10 text-right">#</th>
                   <th className="px-2 py-2">Player</th>
                   <th className="px-2 py-2 w-16">Pos</th>
-                  <th className="px-2 py-2 w-14">Tm</th>
+                  <th className="hidden sm:table-cell px-2 py-2 w-14">Tm</th>
                   <th className="px-2 py-2 w-20 text-right">Value</th>
-                  <th className="px-2 py-2 w-12 text-right">G</th>
-                  <th className="px-2 py-2 w-14 text-right">PTS</th>
-                  <th className="px-2 py-2 w-14 text-right">REB</th>
-                  <th className="px-2 py-2 w-14 text-right">AST</th>
-                  <th className="px-2 py-2 w-12 text-right">STL</th>
-                  <th className="px-2 py-2 w-12 text-right">BLK</th>
+                  <th className="hidden sm:table-cell px-2 py-2 w-12 text-right">G</th>
+                  <th className="hidden md:table-cell px-2 py-2 w-14 text-right">PTS</th>
+                  <th className="hidden md:table-cell px-2 py-2 w-14 text-right">REB</th>
+                  <th className="hidden md:table-cell px-2 py-2 w-14 text-right">AST</th>
+                  <th className="hidden md:table-cell px-2 py-2 w-12 text-right">STL</th>
+                  <th className="hidden md:table-cell px-2 py-2 w-12 text-right">BLK</th>
                 </tr>
               </thead>
               <tbody>
@@ -522,7 +524,7 @@ export function Draft({ onReset }: DraftProps) {
                         </div>
                       </td>
                       <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.positions.join('/') || '-'}</td>
-                      <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.wnba_team || '-'}</td>
+                      <td className="hidden sm:table-cell px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.wnba_team || '-'}</td>
                       <td
                         className="px-2 py-1.5 text-right tabular-nums font-medium"
                         title={
@@ -533,12 +535,12 @@ export function Draft({ onReset }: DraftProps) {
                       >
                         {(p.marginal_value ?? p.value).toFixed(2)}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.games_played}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.points}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.rebounds}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.assists}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.steals}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{p.totals.blocks}</td>
+                      <td className="hidden sm:table-cell px-2 py-1.5 text-right tabular-nums">{p.totals.games_played}</td>
+                      <td className="hidden md:table-cell px-2 py-1.5 text-right tabular-nums">{p.totals.points}</td>
+                      <td className="hidden md:table-cell px-2 py-1.5 text-right tabular-nums">{p.totals.rebounds}</td>
+                      <td className="hidden md:table-cell px-2 py-1.5 text-right tabular-nums">{p.totals.assists}</td>
+                      <td className="hidden md:table-cell px-2 py-1.5 text-right tabular-nums">{p.totals.steals}</td>
+                      <td className="hidden md:table-cell px-2 py-1.5 text-right tabular-nums">{p.totals.blocks}</td>
                     </tr>
                   )
                 })}
@@ -657,11 +659,11 @@ export function Draft({ onReset }: DraftProps) {
 
       {pickPrompt && state && (
         <div
-          className="fixed inset-0 grid place-items-center bg-slate-900/40 dark:bg-black/60 z-50"
+          className="fixed inset-0 grid place-items-center bg-slate-900/40 dark:bg-black/60 z-50 p-3"
           onClick={() => setPickPrompt(null)}
         >
           <div
-            className="bg-white dark:bg-slate-900 dark:border dark:border-slate-800 rounded-xl shadow-lg p-6 w-[28rem]"
+            className="bg-white dark:bg-slate-900 dark:border dark:border-slate-800 rounded-xl shadow-lg p-5 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold">

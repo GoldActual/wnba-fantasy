@@ -85,7 +85,7 @@ export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans">
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-3xl mx-auto px-3 sm:px-6 py-8">
         <header className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold">Draft setup</h1>
@@ -102,7 +102,7 @@ export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
           </div>
         )}
 
-        <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+        <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm">
           <div className="mb-4 flex items-center gap-3">
             <label className="text-sm text-slate-600 dark:text-slate-400">Team count</label>
             <input
