@@ -189,14 +189,23 @@ def setup_teams(req: TeamSetupRequest, db: Session = Depends(get_db)) -> dict:
 
 
 @router.delete("/teams")
-def reset_teams(db: Session = Depends(get_db)) -> dict:
+def reset_teams(force: bool = False, db: Session = Depends(get_db)) -> dict:
     """Equivalent to setup-with-empty: blow away teams + rosters + draft
-    transactions. Frontend uses this when the user hits 'Reset draft'."""
+    transactions. Frontend uses this when the user hits 'Reset draft'.
+
+    Mid-draft (rosters non-empty) requires `?force=true` so a stray DELETE
+    can't wipe an in-progress draft without explicit consent."""
+    pick_count = len(db.scalars(select(Roster)).all())
+    if pick_count and not force:
+        raise HTTPException(
+            409,
+            f"{pick_count} picks already made; pass force=true to wipe and reset",
+        )
     db.execute(delete(Roster))
     db.execute(delete(Transaction).where(Transaction.transaction_type == "draft"))
     db.execute(delete(Team))
     db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "wiped_picks": pick_count}
 
 
 @router.get("/draft/state")

@@ -152,6 +152,7 @@ export function Draft({ onReset }: DraftProps) {
   const [players, setPlayers] = useState<Player[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pickPrompt, setPickPrompt] = useState<Player | null>(null)
+  const [resetPrompt, setResetPrompt] = useState(false)
   const [busy, setBusy] = useState(false)
 
   // Filters / search
@@ -302,15 +303,12 @@ export function Draft({ onReset }: DraftProps) {
   }
 
   const onResetDraft = async () => {
-    if (
-      !window.confirm(
-        'Reset the draft? This wipes all picks and team setup. The player database is unchanged.',
-      )
-    )
-      return
     setBusy(true)
     try {
-      await resetDraft()
+      // The server requires force=true to wipe an in-progress draft. The
+      // user has already confirmed via the modal, so pass it.
+      await resetDraft(true)
+      setResetPrompt(false)
       onReset()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -367,7 +365,7 @@ export function Draft({ onReset }: DraftProps) {
               CSV
             </a>
             <button
-              onClick={onResetDraft}
+              onClick={() => setResetPrompt(true)}
               disabled={busy}
               className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-300 dark:hover:bg-red-950/40 dark:hover:border-red-900 disabled:opacity-50"
             >
@@ -713,6 +711,40 @@ export function Draft({ onReset }: DraftProps) {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {resetPrompt && (
+        <div
+          className="fixed inset-0 grid place-items-center bg-slate-900/40 dark:bg-black/60 z-50 p-3"
+          onClick={() => !busy && setResetPrompt(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 dark:border dark:border-slate-800 rounded-xl shadow-lg p-5 sm:p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-red-700 dark:text-red-400">Reset draft?</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-300 mt-2">
+              This wipes <strong>{state.picks_made}</strong> pick{state.picks_made === 1 ? '' : 's'}
+              {' '}and the team setup. The player database is unchanged. Cannot be undone.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setResetPrompt(false)}
+                disabled={busy}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onResetDraft}
+                disabled={busy}
+                className="rounded-md bg-red-600 text-white border border-red-700 px-3 py-2 text-sm font-medium hover:bg-red-500 disabled:opacity-50"
+              >
+                {busy ? 'Resetting…' : 'Wipe and reset'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -161,7 +161,10 @@ export const fetchDraftState = () => apiFetch<DraftState>('/api/draft/state')
 export const setupTeams = (teams: TeamSetupItem[], force = false) =>
   apiPost<{ teams: TeamSummary[] }>('/api/teams/setup', { teams, force })
 
-export const resetDraft = () => apiDelete<{ status: string }>('/api/teams')
+export const resetDraft = (force = false) =>
+  apiDelete<{ status: string; wiped_picks: number }>(
+    `/api/teams${force ? '?force=true' : ''}`,
+  )
 
 export const makePick = (player_id: number, team_id?: number) =>
   apiPost<DraftState>('/api/draft/pick', { player_id, team_id })
