@@ -34,14 +34,20 @@ CATS = ("points", "rebounds", "assists", "steals", "blocks")
 GAMES_FULL_SEASON = 32  # availability penalty: floor at games/32
 
 # Vet basis selection: prefer the most recent wnba_actual season with at
-# least this many games. Picks like Clark (13 G in 2025) and Stewart (31 G)
-# fall back to their last healthy year. Below this threshold the sample is
-# too injury-noisy to trust as a single-season projection.
-MIN_HEALTHY_GAMES = 25
+# least this many games. The 2025 schedule is 44 games, so 35 is roughly
+# 80% — below that the season is injury-shortened and the totals
+# understate the player's expected output. Stewart (31 G in 2025) falls
+# back to her healthy 2024 (38 G); Clark (13 G in 2025) likewise.
+MIN_HEALTHY_GAMES = 35
 
 DUAL_POSITION_BONUS = 1.04
 TRIPLE_POSITION_BONUS = 1.08
-ROOKIE_CONFIDENCE = 0.70
+# Rookie confidence discount applied at compute time, not ingest. PLAN.md
+# placeholder was 0.70 (heavy discount). Bumped to 0.85 after the ESPN-rank
+# comparison surfaced our top rookies sitting 20-40 ranks below consensus.
+# Translation factors are still conservative; the lift mostly closes that
+# gap without overshooting.
+ROOKIE_CONFIDENCE = 0.85
 OUT_INJURY_PENALTY = 0.40
 OUT_STATUSES = {"out", "out for season"}
 
@@ -79,6 +85,8 @@ class PlayerValue:
     value: float              # final score (everything multiplied in)
 
     injury_status: str | None
+    injury_description: str | None
+    injury_return_date: str | None  # ISO date 'YYYY-MM-DD' or None
     stats_source: str         # 'wnba_actual' | 'ncaa_projection'
 
 
@@ -207,6 +215,8 @@ def compute_player_values(db: Session) -> list[PlayerValue]:
             rookie_factor=rookie_factor,
             value=value,
             injury_status=inj.status if inj else None,
+            injury_description=inj.description if inj else None,
+            injury_return_date=inj.return_date.isoformat() if inj and inj.return_date else None,
             stats_source=stats.source,
         ))
 

@@ -29,11 +29,18 @@ const CAT_LABEL: Record<Cats, string> = {
 const ALL_SLOTS: Slot[] = ['G', 'F', 'C', 'UTIL']
 const POSITIONAL_SLOTS: Array<Exclude<Slot, 'UTIL'>> = ['G', 'F', 'C']
 
-function injuryBadge(status: string | null) {
-  if (!status) return { dot: '🟢', label: 'Healthy', tone: 'text-emerald-700' }
+function injuryBadge(p: Player) {
+  const status = p.injury_status
+  if (!status) return { dot: '🟢', tooltip: 'Healthy', tone: 'text-emerald-700' }
+  // Build a multi-line tooltip: status, description, ETA. <br>-style newlines
+  // are flattened by the browser in title="" — \n is the right separator.
+  const parts = [status]
+  if (p.injury_description) parts.push(p.injury_description)
+  if (p.injury_return_date) parts.push(`Est. return: ${p.injury_return_date}`)
+  const tooltip = parts.join('\n')
   const s = status.toLowerCase()
-  if (s.includes('out')) return { dot: '🔴', label: status, tone: 'text-red-700' }
-  return { dot: '🟡', label: status, tone: 'text-amber-700' }
+  if (s.includes('out')) return { dot: '🔴', tooltip, tone: 'text-red-700' }
+  return { dot: '🟡', tooltip, tone: 'text-amber-700' }
 }
 
 type Standing = {
@@ -73,24 +80,48 @@ function projectedStandings(state: DraftState): Standing[] {
   return out.sort((a, b) => a.rankSum - b.rankSum)
 }
 
-function FinalStandings({ state, myTeamId }: { state: DraftState; myTeamId: number | null }) {
+function Standings({ state, myTeamId }: { state: DraftState; myTeamId: number | null }) {
   const standings = useMemo(() => projectedStandings(state), [state])
   const winner = standings[0]
+  const complete = state.is_complete
+  const anyPicks = state.picks_made > 0
+
+  // Mid-draft, slate styling (informational); post-draft, emerald (celebratory).
+  const t = complete
+    ? {
+        ringBg: 'border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40',
+        title: 'text-emerald-900 dark:text-emerald-200',
+        sub: 'text-emerald-800 dark:text-emerald-300',
+        innerBorder: 'border-emerald-200/80 dark:border-emerald-900/60',
+        thead: 'bg-emerald-100/60 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-300',
+        rowBorder: 'border-emerald-100 dark:border-emerald-900/60',
+      }
+    : {
+        ringBg: 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900',
+        title: 'text-slate-900 dark:text-slate-100',
+        sub: 'text-slate-600 dark:text-slate-400',
+        innerBorder: 'border-slate-200 dark:border-slate-800',
+        thead: 'bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300',
+        rowBorder: 'border-slate-100 dark:border-slate-800',
+      }
+
+  const headline = complete ? 'Draft complete · projected finish' : 'Live projected finish'
+  const winnerLine = complete
+    ? <>Winner if everyone hits their basis stats: <strong>{winner.team_name}</strong> (rank-sum {winner.rankSum})</>
+    : anyPicks
+      ? <>Currently leading: <strong>{winner.team_name}</strong> (rank-sum {winner.rankSum}) — partial picks; rankings settle as more picks are made</>
+      : <>No picks yet — totals will populate live as the draft proceeds</>
+
   return (
     <section className="max-w-7xl mx-auto px-3 sm:px-6 mt-4">
-      <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-5 py-4">
+      <div className={`rounded-xl border px-5 py-4 ${t.ringBg}`}>
         <div className="flex flex-wrap items-baseline gap-2 mb-3">
-          <h2 className="text-lg font-semibold text-emerald-900 dark:text-emerald-200">
-            Draft complete · projected finish
-          </h2>
-          <span className="text-sm text-emerald-800 dark:text-emerald-300">
-            Winner if everyone hits their basis stats: <strong>{winner.team_name}</strong>
-            {' '}(rank-sum {winner.rankSum})
-          </span>
+          <h2 className={`text-lg font-semibold ${t.title}`}>{headline}</h2>
+          <span className={`text-sm ${t.sub}`}>{winnerLine}</span>
         </div>
-        <div className="overflow-x-auto rounded border border-emerald-200/80 dark:border-emerald-900/60 bg-white dark:bg-slate-900">
+        <div className={`overflow-x-auto rounded border bg-white dark:bg-slate-900 ${t.innerBorder}`}>
           <table className="w-full text-sm">
-            <thead className="bg-emerald-100/60 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-300">
+            <thead className={t.thead}>
               <tr className="text-left">
                 <th className="px-3 py-2 w-10 text-right">#</th>
                 <th className="px-3 py-2">Owner</th>
@@ -105,7 +136,7 @@ function FinalStandings({ state, myTeamId }: { state: DraftState; myTeamId: numb
                 <tr
                   key={s.team_id}
                   className={
-                    'border-t border-emerald-100 dark:border-emerald-900/60 ' +
+                    `border-t ${t.rowBorder} ` +
                     (s.team_id === myTeamId ? 'bg-amber-50 dark:bg-amber-950/30 font-medium' : '')
                   }
                 >
@@ -384,8 +415,8 @@ export function Draft({ onReset }: DraftProps) {
         </div>
       )}
 
-      {state.is_complete && (
-        <FinalStandings state={state} myTeamId={myTeam?.id ?? null} />
+      {state.teams.length > 0 && (
+        <Standings state={state} myTeamId={myTeam?.id ?? null} />
       )}
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 grid grid-cols-12 gap-4">
@@ -488,7 +519,7 @@ export function Draft({ onReset }: DraftProps) {
               <tbody>
                 {filteredPlayers.map((p, idx) => {
                   const drafted = p.drafted_by_team_id != null
-                  const inj = injuryBadge(p.injury_status)
+                  const inj = injuryBadge(p)
                   return (
                     <tr
                       key={p.player_id}
@@ -504,7 +535,7 @@ export function Draft({ onReset }: DraftProps) {
                       <td className="px-2 py-1.5 text-right text-slate-500 dark:text-slate-400 tabular-nums">{idx + 1}</td>
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1.5">
-                          <span title={inj.label} className={inj.tone}>{inj.dot}</span>
+                          <span title={inj.tooltip} className={inj.tone}>{inj.dot}</span>
                           {p.is_rookie && (
                             <span
                               title={`🆕 Rookie — projected from ${p.school || 'NCAA'}; high uncertainty${

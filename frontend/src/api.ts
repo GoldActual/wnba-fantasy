@@ -50,6 +50,8 @@ export type Player = {
   override_note: string | null
   stats_source: 'wnba_actual' | 'ncaa_projection'
   injury_status: string | null
+  injury_description: string | null
+  injury_return_date: string | null  // ISO 'YYYY-MM-DD'
   drafted_by_team_id: number | null
   totals: {
     games_played: number

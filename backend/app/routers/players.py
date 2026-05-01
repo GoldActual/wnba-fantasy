@@ -49,6 +49,8 @@ def _serialize(
         "override_note": v.override_note,
         "stats_source": v.stats_source,
         "injury_status": v.injury_status,
+        "injury_description": v.injury_description,
+        "injury_return_date": v.injury_return_date,
         "drafted_by_team_id": drafted_by.get(v.player_id),
         "totals": {
             "games_played": v.games_played,

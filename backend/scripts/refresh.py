@@ -12,6 +12,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Windows default stdout codec is cp1252, which crashes on rookie names
+# with diacritics like 'ć' (Carrión etc.). Reconfigure once so verbose
+# prints from rookies.py / reports.py don't blow up the whole refresh.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
