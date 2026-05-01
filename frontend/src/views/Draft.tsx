@@ -550,6 +550,20 @@ export function Draft({ onReset }: DraftProps) {
                           {p.is_rookie && p.draft_pick != null && (
                             <span className="text-xs text-slate-500 dark:text-slate-400">#{p.draft_pick}</span>
                           )}
+                          {/* Tm column is hidden on phone, so surface it inline */}
+                          <span className="sm:hidden ml-auto text-[11px] text-slate-500 dark:text-slate-400">
+                            {p.wnba_team || ''}
+                          </span>
+                        </div>
+                        {/* Cat columns are hidden on phone; show stats inline so the user
+                            can see PTS/REB/AST/STL/BLK without horizontal-scrolling. */}
+                        <div className="sm:hidden mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
+                          {p.totals.games_played}G
+                          {' · '}{p.totals.points}P
+                          {' · '}{p.totals.rebounds}R
+                          {' · '}{p.totals.assists}A
+                          {' · '}{p.totals.steals}S
+                          {' · '}{p.totals.blocks}B
                         </div>
                       </td>
                       <td className="px-2 py-1.5 text-slate-700 dark:text-slate-300">{p.positions.join('/') || '-'}</td>
