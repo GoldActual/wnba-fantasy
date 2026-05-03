@@ -35,10 +35,18 @@ function TeamPanel({
   team: StandingsTeam
   showProjection: boolean
 }) {
+  const current = team.players.filter((p) => p.is_current_roster)
+  const departed = team.players.filter((p) => !p.is_current_roster)
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 mt-2">
       <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 text-sm text-slate-600 dark:text-slate-400">
-        Roster ({team.players.length}) — {team.games_played} games played
+        Roster ({current.length}) — {team.games_played} games played
+        {departed.length > 0 && (
+          <span className="ml-2 text-xs">
+            · {departed.length} traded-away contributor
+            {departed.length > 1 ? 's' : ''} below
+          </span>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -54,12 +62,15 @@ function TeamPanel({
             </tr>
           </thead>
           <tbody>
-            {team.players.map((p) => {
+            {[...current, ...departed].map((p) => {
               const inj = injuryBadge(p.injury_status)
+              const departedStyle = !p.is_current_roster
+                ? 'italic text-slate-500 dark:text-slate-400'
+                : ''
               return (
                 <tr
                   key={p.player_id}
-                  className="border-t border-slate-100 dark:border-slate-800"
+                  className={`border-t border-slate-100 dark:border-slate-800 ${departedStyle}`}
                 >
                   <td className="px-3 py-1.5">
                     {inj.dot && (
@@ -75,6 +86,7 @@ function TeamPanel({
                     {p.name}
                     <span className="ml-1 text-xs text-slate-400">
                       {p.wnba_team} · {p.positions.join('/')}
+                      {!p.is_current_roster && ' · traded away'}
                     </span>
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{p.games}</td>
@@ -118,9 +130,10 @@ function TeamPanel({
 
 type ScoreboardProps = {
   onSwitchToDraft: () => void
+  onSwitchToTransactions: () => void
 }
 
-export function Scoreboard({ onSwitchToDraft }: ScoreboardProps) {
+export function Scoreboard({ onSwitchToDraft, onSwitchToTransactions }: ScoreboardProps) {
   const [data, setData] = useState<StandingsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -171,6 +184,13 @@ export function Scoreboard({ onSwitchToDraft }: ScoreboardProps) {
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
             >
               {busy ? '…' : 'Refresh'}
+            </button>
+            <button
+              type="button"
+              onClick={onSwitchToTransactions}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Transactions
             </button>
             <button
               type="button"

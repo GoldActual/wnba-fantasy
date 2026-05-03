@@ -29,6 +29,8 @@ def _ensure_columns() -> None:
     additions: list[tuple[str, str, str]] = [
         ("teams", "is_my_team", "BOOLEAN NOT NULL DEFAULT 0"),
         ("players", "bbr_slug", "TEXT"),
+        ("transactions", "event_id", "TEXT"),
+        ("transactions", "category", "TEXT"),
     ]
     with engine.begin() as conn:
         from sqlalchemy import text

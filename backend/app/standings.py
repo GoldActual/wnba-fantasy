@@ -12,10 +12,13 @@ rank (1+2+...+N)/N = (N+1)/2 in every cat. Pre-season rank-sum =
 5 × (N+1)/2 — every team identical, all tied for 1st. Exactly what the
 "start at 0" rule wants.
 
-Backdated trades: NOT honored here yet — the aggregator reads
-*current* roster ownership only. CP9 will swap in ownership-window
-attribution once the transactions UI lands. The schema already supports
-it via transactions.effective_date.
+Backdated trades: honored as of CP9. Each game's stats attribute to
+whichever team owned the player on the game's date, derived from the
+transactions ledger (`app/transactions.py::build_ownership_timelines`).
+A player traded mid-stint splits cleanly between owners with no manual
+intervention. `aggregate_team_totals(team_player_map)` (kept for the
+CP11 simulator) is a *hypothetical-rosters* helper that ignores history
+— use that when answering "if these were the rosters today, ...".
 """
 from __future__ import annotations
 
@@ -26,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import GameStats, Injury, Player, Roster, Team
+from app.transactions import build_ownership_timelines, owner_on_date
 
 CATS = ("points", "rebounds", "assists", "steals", "blocks")
 CURRENT_SEASON = 2026
@@ -46,6 +50,10 @@ class PlayerContribution:
     steals: int
     blocks: int
     injury_status: str | None
+    is_current_roster: bool   # False = traded-away player whose pre-trade
+                              # stats still attribute to this team via the
+                              # ownership timeline. UI usually marks these
+                              # with a strikethrough or "departed" label.
 
 
 @dataclass(frozen=True)
@@ -196,23 +204,52 @@ def compute_standings(
         default=0,
     )
 
-    # Pass 1: per-team totals + per-player contributions
-    team_totals: dict[int, dict[str, int]] = {}
-    team_team_games: dict[int, int] = {}
+    # Ownership timelines: for each player who has any transaction history,
+    # we attribute each game's stats to whichever team owned the player on
+    # that date. Without backdating this collapses to "current owner". With
+    # backdating (CP9), it splits a player's contributions across owners
+    # exactly the way the league sheet would.
+    timelines = build_ownership_timelines(db)
+
+    # Pass 1: per-team totals + per-player contributions per OWNERSHIP-AT-GAME-DATE
+    team_totals: dict[int, dict[str, int]] = {t.id: {c: 0 for c in CATS} for t in teams}
+    team_team_games: dict[int, int] = {t.id: 0 for t in teams}
+    # team_id -> player_id -> {cat: int, games: int}
+    contribs_buckets: dict[int, dict[int, dict[str, int]]] = {t.id: {} for t in teams}
+    for player_id, pgames in games_by_player_id.items():
+        windows = timelines.get(player_id, [])
+        if not windows:
+            continue
+        for g in pgames:
+            owner = owner_on_date(windows, g.game_date)
+            if owner is None or owner not in team_totals:
+                continue
+            for c in CATS:
+                team_totals[owner][c] += getattr(g, c)
+            bucket = contribs_buckets[owner].setdefault(
+                player_id, {"games": 0, **{c: 0 for c in CATS}}
+            )
+            bucket["games"] += 1
+            for c in CATS:
+                bucket[c] += getattr(g, c)
+            team_team_games[owner] = max(team_team_games[owner], bucket["games"])
+
+    # Pass 1b: build PlayerContribution rows. Each team gets:
+    #   - All current rostered players (with stats from their tenure here, or 0s)
+    #   - Any "departed" players whose pre-trade tenure here still credits stats
+    #     to this team via the ownership timeline (so backdated trades surface
+    #     the original owner's contribution alongside who's currently rostered).
     team_contribs: dict[int, list[PlayerContribution]] = {}
     for t in teams:
-        totals = {c: 0 for c in CATS}
+        current_pids = {r.player_id for r in rosters_by_team[t.id]}
+        contributing_pids = set(contribs_buckets[t.id].keys())
+        all_pids = current_pids | contributing_pids
         contribs: list[PlayerContribution] = []
-        team_max_games = 0
-        for r in rosters_by_team[t.id]:
-            p = players.get(r.player_id)
+        for pid in all_pids:
+            p = players.get(pid)
             if p is None:
                 continue
-            pgames = games_by_player_id.get(r.player_id, [])
-            cat_sums = {c: sum(getattr(g, c) for g in pgames) for c in CATS}
-            for c in CATS:
-                totals[c] += cat_sums[c]
-            team_max_games = max(team_max_games, len(pgames))
+            bucket = contribs_buckets[t.id].get(pid, {"games": 0, **{c: 0 for c in CATS}})
             inj = injuries.get(p.id)
             contribs.append(PlayerContribution(
                 player_id=p.id,
@@ -220,16 +257,17 @@ def compute_standings(
                 positions=tuple(p.positions or []),
                 wnba_team=p.wnba_team,
                 is_rookie=p.is_rookie,
-                games=len(pgames),
-                points=cat_sums["points"],
-                rebounds=cat_sums["rebounds"],
-                assists=cat_sums["assists"],
-                steals=cat_sums["steals"],
-                blocks=cat_sums["blocks"],
+                games=bucket["games"],
+                points=bucket["points"],
+                rebounds=bucket["rebounds"],
+                assists=bucket["assists"],
+                steals=bucket["steals"],
+                blocks=bucket["blocks"],
                 injury_status=inj.status if inj else None,
+                is_current_roster=pid in current_pids,
             ))
-        team_totals[t.id] = totals
-        team_team_games[t.id] = team_max_games
+        # Sort: current first, then departed; within each, by points desc.
+        contribs.sort(key=lambda c: (not c.is_current_roster, -c.points, c.name))
         team_contribs[t.id] = contribs
 
     # Pass 2: per-cat ranks across teams

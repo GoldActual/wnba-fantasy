@@ -3,8 +3,9 @@ import { fetchDraftState, type DraftState } from './api'
 import { Setup } from './views/Setup'
 import { Draft } from './views/Draft'
 import { Scoreboard } from './views/Scoreboard'
+import { Transactions } from './views/Transactions'
 
-type Mode = 'loading' | 'setup' | 'draft' | 'scoreboard'
+type Mode = 'loading' | 'setup' | 'draft' | 'scoreboard' | 'transactions'
 
 function App() {
   const [mode, setMode] = useState<Mode>('loading')
@@ -20,8 +21,10 @@ function App() {
         setMode('setup')
       } else if (s.is_complete) {
         // Once the draft is over, the scoreboard is the home view.
-        // Draft board stays accessible via the toggle in the header.
-        setMode((cur) => (cur === 'draft' ? 'draft' : 'scoreboard'))
+        // Draft board + transactions stay accessible via header toggles.
+        setMode((cur) =>
+          cur === 'draft' || cur === 'transactions' ? cur : 'scoreboard',
+        )
       } else {
         setMode('draft')
       }
@@ -59,10 +62,30 @@ function App() {
   }
 
   if (mode === 'scoreboard') {
-    return <Scoreboard onSwitchToDraft={() => setMode('draft')} />
+    return (
+      <Scoreboard
+        onSwitchToDraft={() => setMode('draft')}
+        onSwitchToTransactions={() => setMode('transactions')}
+      />
+    )
   }
 
-  return <Draft onReset={refresh} onSwitchToScoreboard={() => setMode('scoreboard')} />
+  if (mode === 'transactions') {
+    return (
+      <Transactions
+        onSwitchToScoreboard={() => setMode('scoreboard')}
+        onSwitchToDraft={() => setMode('draft')}
+      />
+    )
+  }
+
+  return (
+    <Draft
+      onReset={refresh}
+      onSwitchToScoreboard={() => setMode('scoreboard')}
+      onSwitchToTransactions={() => setMode('transactions')}
+    />
+  )
 }
 
 export default App

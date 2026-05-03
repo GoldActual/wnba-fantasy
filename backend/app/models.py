@@ -99,6 +99,16 @@ class Transaction(Base):
       - 'team_dissolved' — TODO Phase 2: when a fantasy team drops mid-season,
                           their roster dissolves into FA on this effective_date
                           (see PLAN.md Phase 2 / "Mid-season team changes").
+
+    `event_id` groups rows that constitute one logical league event:
+      - Pickup = an 'add' row + a 'drop' row sharing event_id
+      - Trade  = two 'trade' rows (one per player) sharing event_id
+    Counted as a single transaction against each involved team's 4-per-season
+    budget.
+
+    `category` is 'strategic' | 'injury' on event-driven rows; null on 'draft'
+    and 'team_dissolved'. Per league rules each team has 2 strategic + 2
+    injury transactions per season.
     """
 
     __tablename__ = "transactions"
@@ -112,6 +122,9 @@ class Transaction(Base):
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, nullable=False)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    event_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_transactions_player_effective", "player_id", "effective_date"),

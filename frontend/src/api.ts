@@ -198,6 +198,8 @@ export type StandingsPlayer = {
   steals: number
   blocks: number
   injury_status: string | null
+  is_current_roster: boolean   // false = traded-away player whose pre-trade
+                                // stats still attribute to this team
 }
 
 export type StandingsTeam = {
@@ -222,3 +224,76 @@ export type StandingsResponse = {
 
 export const fetchStandings = (season = 2026) =>
   apiFetch<StandingsResponse>(`/api/standings?season=${season}`)
+
+// ---- Transactions (CP9) ----
+
+export type TxnCategory = 'strategic' | 'injury'
+
+export type TxnLeg = {
+  transaction_type: 'add' | 'drop' | 'trade'
+  player_id: number | null
+  player_name: string | null
+  from_team_id: number | null
+  from_team_name: string | null
+  to_team_id: number | null
+  to_team_name: string | null
+}
+
+export type TxnEvent = {
+  event_id: string
+  event_type: 'pickup' | 'trade' | string
+  category: TxnCategory | null
+  effective_date: string  // ISO YYYY-MM-DD
+  created_at: string
+  note: string | null
+  teams_involved: number[]
+  legs: TxnLeg[]
+}
+
+export type TxnUsage = {
+  team_id: number
+  team_name: string | null
+  strategic_used: number
+  injury_used: number
+  total_used: number
+  strategic_remaining: number
+  injury_remaining: number
+  total_remaining: number
+}
+
+export type TxnLimits = {
+  per_team: number
+  strategic_per_team: number
+  injury_per_team: number
+}
+
+export type TransactionsResponse = {
+  events: TxnEvent[]
+  usage: TxnUsage[]
+  limits: TxnLimits
+}
+
+export const fetchTransactions = () =>
+  apiFetch<TransactionsResponse>('/api/transactions')
+
+export const postPickup = (body: {
+  team_id: number
+  add_player_id: number
+  drop_player_id: number
+  effective_date?: string  // ISO date
+  category: TxnCategory
+  note?: string
+}) => apiPost<{ event_id: string }>('/api/transactions/pickup', body)
+
+export const postTrade = (body: {
+  team_a_id: number
+  team_a_player_id: number
+  team_b_id: number
+  team_b_player_id: number
+  effective_date?: string
+  category: TxnCategory
+  note?: string
+}) => apiPost<{ event_id: string }>('/api/transactions/trade', body)
+
+export const undoTransaction = (event_id: string) =>
+  apiDelete<{ deleted_rows: number; event_id: string }>(`/api/transactions/${event_id}`)

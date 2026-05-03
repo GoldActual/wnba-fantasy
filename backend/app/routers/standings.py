@@ -53,6 +53,7 @@ def _serialize(result) -> dict:
                         "steals": p.steals,
                         "blocks": p.blocks,
                         "injury_status": p.injury_status,
+                        "is_current_roster": p.is_current_roster,
                     }
                     for p in t.players
                 ],

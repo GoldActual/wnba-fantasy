@@ -238,4 +238,72 @@ I haven't opened the page in a browser. User should `launch.bat` (or `uvicorn ..
 
 ### Known follow-ups
 - A live "since-last-refresh" delta (who moved up/down rank-sum) would be nice. Not built — defer to CP12 polish or a dedicated CP if the user finds it valuable.
-- `FULL_SEASON_GAMES = 44` is a constant in `standings.py`. If the WNBA tweaks the schedule mid-2026, just bump it.
+- `FULL_SEASON_GAMES = 44` is a constant in `standings.py`. If the WNBA tweaks the schedule mid-2026, just bump it. Confirmed via CBS Sports schedule release: 44 games per team in 2026.
+
+---
+
+## 2026-05-03 — Checkpoint 9: Transaction ledger UI (any team, back-date-able)
+
+### Why this is core, not polish
+The user logs every team's add/drop/trade — the league doesn't notify, so they're back-dating from the official sheet. Means:
+- All forms accept any team_id (not just is_my_team).
+- Effective dates settable backwards; the standings aggregator must honor ownership windows so backdated trades reattribute past stats correctly.
+- Per-team transaction-budget visibility (4 = 2 strategic + 2 injury) — the scarcity drives every move.
+
+### Schema
+- Two new columns on `transactions` (idempotent migration in `_ensure_columns`):
+  - `event_id` (TEXT, indexed) — UUID4 grouping rows that constitute one logical league event.
+  - `category` (TEXT) — 'strategic' | 'injury' on event-driven rows; null on 'draft' / 'team_dissolved'.
+- One pickup = one event_id with two rows (`type='add'` + `type='drop'`). One trade = one event_id with two `type='trade'` rows (one per player). Counted as ONE transaction per involved team. 'draft' rows have null event_id and don't count.
+- The dropped player's slot is encoded in the drop row's `notes` field as `[slot=C]` (or `G` / `F` / `UTIL`) so undo can restore the slot. Otherwise the slot info would be lost when the added player took the dropped player's spot.
+
+### `app/transactions.py` — domain logic
+- `ownership_windows_for_player(txs)` → `[(start, end_inclusive_or_none, team_id)]`. Walks chronologically. Effective_date is **inclusive** for the new owner — a game on the trade date attributes to the new team. Out-of-order data closes the previous window the day before the new one starts.
+- `build_ownership_timelines(db)` → `{player_id: windows}` for every player who has any transaction history.
+- `owner_on_date(windows, d)` → team_id or None — used by the scoreboard aggregator.
+- `record_pickup(...)` and `record_trade(...)` — atomic write of Transaction rows + Roster mutation. Validate that the dropped player is on the team and the added player is currently FA; trades validate both players' rosters.
+- `delete_event(event_id)` — undo an event by reversing Roster mutations and deleting all rows sharing the event_id. Slot is restored from the encoded `[slot=X]` tag.
+- `usage_by_team(db)` → `{team_id: TeamUsage}` — counts distinct event_ids per team, split by category. The scoreboard's roster shape and the 4/team budget are independent of this — usage just counts events, doesn't enforce.
+
+### Standings now honors ownership windows
+`compute_standings()` in `app/standings.py` was rewritten:
+- Per-game stats attribute to whichever team owned the player on the game's date (via `owner_on_date`).
+- The team panel now shows current rostered players AND any "departed" contributors whose pre-trade tenure on this team still credits to them. Departed rows have `is_current_roster=false`; the frontend italicizes them and labels "traded away".
+- `aggregate_team_totals(team_player_map)` (the hypothetical-rosters helper for CP11 simulator) is unchanged — it intentionally ignores history so the simulator can answer "if these were the rosters today, ...".
+
+### Endpoints — `app/routers/transactions.py`
+- `GET /api/transactions` → `{events, usage, limits}`. Events grouped by event_id, sorted desc by effective_date. Each event's `event_type` is derived ('pickup' from add+drop legs, 'trade' from trade legs).
+- `POST /api/transactions/pickup` body: `{team_id, add_player_id, drop_player_id, effective_date?, category, note?}` → `{event_id}`. 400 on validation errors (player not on team, etc.).
+- `POST /api/transactions/trade` body: `{team_a_id, team_a_player_id, team_b_id, team_b_player_id, effective_date?, category, note?}` → `{event_id}`.
+- `DELETE /api/transactions/{event_id}` → `{deleted_rows, event_id}`. Reverses Roster + deletes the event's rows.
+
+### League rule: no team-to-team trades
+Confirmed during build: every transaction in this league is "drop one rostered player, add one free agent" — always 1-for-1, no team-to-team swaps. The user calls these "trades" colloquially. PLAN.md mentioned team-to-team trades and the schema supports them, but the league has never run them.
+
+The backend `record_trade` function and `POST /api/transactions/trade` endpoint are kept (working, tested, future-proof against a rule change) but **not exposed in the UI**. The frontend has only the pickup-style form, labeled "Trade" to match the user's vocabulary.
+
+### Frontend — `views/Transactions.tsx`
+- Header with Scoreboard + Draft toggles.
+- Per-team usage panel: 8 cards, each with strategic / injury progress bars (green / amber / red).
+- Single "+ Trade" button reveals the form: team picker, current-roster drop selector, FA search-as-you-type with a sized listbox, effective-date input, strategic/injury radio, optional note.
+- Audit log below — each event renders as one summary line with effective date, category badge, the leg summary ("Cole: drop X, add Y"), optional note in italics, and an Undo button (with `confirm()`).
+- Errors from the API surface in a red banner at the top.
+
+### App.tsx routing
+- `Mode` adds `'transactions'`. Header buttons cycle Scoreboard ↔ Draft ↔ Transactions; default is still Scoreboard once the draft is complete.
+
+### Scoreboard view tweak
+- Team panel header: "Roster (N) — M games played · K traded-away contributors below" when departed players exist.
+- Departed rows render italic + grayed + label "traded away" next to their position info.
+
+### Verification
+- `init_db()` migration applied — `transactions` table now has `event_id` + `category` columns.
+- Pickup smoke: Cole drops A'ja, picks up Monique Akoa Makani (effective 2026-05-15, strategic). Roster updated; usage = 1 strategic for Cole. Undo restores A'ja to slot C (the encoded slot tag worked). Rolled back.
+- Trade smoke: A'ja↔Caitlin between Cole and Sean effective 2026-05-20. Pre-injected 4 games for each player (5/8, 5/15, 5/22, 5/29). After ownership-window aggregation: Cole's PTS = 90 (A'ja pre-trade) + 58 (Caitlin post-trade) = 148. Sean's PTS = 45 (Caitlin pre-trade) + 80 (A'ja post-trade) = 125. Both teams' panels include the traded-away contributor in their breakdown. Math matches the manual calculation. Rolled back.
+- Empty state via curl `GET /api/transactions`: 0 events, 8 usage rows (4-remaining each), limits returned.
+- Frontend `npx tsc --noEmit` clean.
+
+### Known limitations / follow-ups
+- Backdating that crosses an existing later event isn't auto-cascaded by the undo path; user must delete events in reverse chronological order (UI doesn't enforce this; we surface it as a usage rule). The user is the only operator, so this is fine.
+- No "preview impact before committing" dialog yet. Defer to CP11 simulator — that's the natural home for "if I do X, here's the standings delta" reasoning.
+- Visual verification still owed (user is on mobile). All TS / endpoint smokes are green.

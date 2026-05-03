@@ -16,6 +16,7 @@ import { ThemeToggle } from '../components/ThemeToggle'
 type DraftProps = {
   onReset: () => void
   onSwitchToScoreboard?: () => void
+  onSwitchToTransactions?: () => void
 }
 
 type Cats = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
@@ -179,7 +180,7 @@ function openPositionalNeeds(teamId: number, state: DraftState): Set<Exclude<Slo
   return needs
 }
 
-export function Draft({ onReset, onSwitchToScoreboard }: DraftProps) {
+export function Draft({ onReset, onSwitchToScoreboard, onSwitchToTransactions }: DraftProps) {
   const [state, setState] = useState<DraftState | null>(null)
   const [players, setPlayers] = useState<Player[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -402,6 +403,14 @@ export function Draft({ onReset, onSwitchToScoreboard }: DraftProps) {
                 className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Scoreboard
+              </button>
+            )}
+            {onSwitchToTransactions && (
+              <button
+                onClick={onSwitchToTransactions}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Transactions
               </button>
             )}
             <button
