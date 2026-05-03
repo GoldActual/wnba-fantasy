@@ -40,6 +40,11 @@ class Player(Base):
     projected_mpg: Mapped[float | None] = mapped_column(Float, nullable=True)
     override_note: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # basketball-reference player slug (e.g. 'wilsoa01w') — used to construct
+    # gamelog URLs for in-season per-game ingest. Populated by
+    # scripts/discover-bbr-slugs.py via name match against the season totals page.
+    bbr_slug: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now, nullable=False)
 
@@ -142,6 +147,51 @@ class StatsSeason(Base):
     )
 
     player: Mapped["Player"] = relationship(back_populates="stats")
+
+
+class GameStats(Base):
+    """One row per (player, game_date). Per-game logs scraped from
+    basketball-reference's player gamelog pages. Aggregating these gives the
+    season totals used by the live scoreboard.
+
+    Pre-season the table is empty: the scoreboard view shows everyone at 0
+    until games are played and ingested, by design (see memory:
+    feedback_live_vs_value — live scoreboard is 2026 actuals only, no prior-
+    season fallback).
+
+    Why per-game (not season totals): supports backdated trades. When a trade's
+    effective_date is set, stat attribution reads ownership windows from the
+    transactions ledger and partitions a player's per-game rows accordingly.
+    Season totals can't be split that way.
+
+    `team` captures who the player suited up for that day — handles WNBA-side
+    mid-season trades (the Player.wnba_team field is current-only)."""
+
+    __tablename__ = "game_stats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False, index=True)
+    game_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    team: Mapped[str | None] = mapped_column(String, nullable=True)
+    opponent: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_home: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    started: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    minutes: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rebounds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    assists: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    steals: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    blocks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    source: Mapped[str] = mapped_column(String, default="bbr", nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("player_id", "game_date", name="uq_game_stats_player_date"),
+        Index("ix_game_stats_season_date", "season", "game_date"),
+    )
 
 
 class Injury(Base):

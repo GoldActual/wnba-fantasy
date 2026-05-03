@@ -135,3 +135,68 @@ Running log of decisions and known issues. Append-only-ish: prefer adding new en
 ### API + UI
 - `GET /api/players` returns the ranked list with optional filters (`search`, `position` ∈ {G,F,C}, `hide_rookies`, `rookies_only`, `limit`).
 - Frontend rewritten as a single-page Best Available view: search box, position tabs, rookie toggle, table with rank / injury dot / 🆕 badge / pos / team / value / 5-cat totals. Rookie rows tinted amber. No draft state yet — that's CP5.
+
+---
+
+## 2026-05-03 — Post-draft data fixes
+
+The draft ran on Saturday May 2. Three picks were filled with random players because of search/availability problems during the draft; corrected today against the user's authoritative CSV (`WNBA Draft 2026 - Sheet1.csv`):
+
+- **Pick 24, Jay → Tina Charles** (was Luisa Geiselsoder). Tina was missing from the DB entirely — NOTES CP2 had flagged her as retired/unsigned and the WNBA.com /players scrape didn't return her. She signed with Connecticut Sun for 2026. Inserted with `wnba_team='CON'`, `positions=["C"]`, `is_rookie=False`, `stats_source='wnba_actual'`. **No 2024/25 stats backfilled** — once the in-season refresh starts pulling 2026 actuals, that becomes her value basis. Worth revisiting at next year's draft prep when historical IS the basis.
+- **Pick 41, Jay → Azzi Fudd** (was Laeticia Amihere). Fudd was already in the DB (id=82, DAL, rookie). Search-as-you-type failure during the draft — CSV also misspells her as "Azi Fudd".
+- **Pick 47, Sean → Luisa Geiselsoder** (was Temi Fagbenle). Luisa was in the DB but had been used as Tina's filler at pick 24, so she wasn't available later in the draft.
+
+Slot rebalance on Jay's roster: Aliyah Boston (C/F) moved C → F to free C for Tina; Azzi Fudd took UTIL since G was full. Sean's pick 47 swap kept slot C. All 8 teams still have a valid 2G/2F/1C/1UTIL fill; 48 unique picks; 48 draft transactions logged.
+
+Applied via direct SQL (idempotent: roster + transaction rows updated in place; player record for Tina inserted). Did NOT use the draft endpoints — undoing 25 picks to redo them would have churned the transaction log unnecessarily.
+
+Known follow-up: re-run the rookie projections + value scorer at some point so Tina has any value at all; for now her value will be 0 until her 2026 `wnba_actual` row lands.
+
+---
+
+## 2026-05-03 — Checkpoint 7: Per-game stat ingest
+
+### Why per-game (not season totals)
+The Phase 2 rotisserie scoreboard must support **backdated trades** — the user logs other teams' add/drops/trades from the official sheet and routinely back-dates them. Stat attribution by ownership window can't be done from season totals; we need a row per game so the aggregator can split a player's contribution across owners.
+
+The CP2 season-totals pipeline (Rotowire) stays in place for 2024 + 2025 — those are historical, no backdating needed. CP7 only adds 2026 per-game ingest.
+
+### Source: basketball-reference (over Rotowire)
+Rotowire is what we already use for season totals, but their per-game endpoint is harder to discover and our existing daily totals scrape will catch revisions anyway. BBR per-player gamelog is straightforward static HTML once you strip their HTML-comment ad-blocker wrappers (same trick as the CBB scraper).
+
+URL pattern: `/wnba/players/{first_letter}/{slug}/gamelog/{season}/`. Example: A'ja Wilson → `/wnba/players/w/wilsoa01w/gamelog/2025/`. Table id `wnba_pgl_basic` (regular season).
+
+BBR gotchas:
+- Default User-Agent gets 403'd. Existing `RateLimitedSession` UA works fine.
+- Gamelog table is wrapped in `<!-- ... -->`; strip comments before BS4.
+- DNP / inactive rows have non-numeric `mp` — skip them.
+- The "totals" page table id is `totals` (not `totals_stats` or `per_game_stats`).
+
+### Schema additions
+- `players.bbr_slug` — BBR player slug, populated by `discover-bbr-slugs.py` via normalized-name match against the season totals page. Idempotent migration in `_ensure_columns`.
+- `game_stats` table — one row per (player, game_date), UNIQUE on `(player_id, game_date)`. Carries `team` (the WNBA team the player suited up for that day; handles WNBA-side mid-season trades) + `opponent` + `is_home` + `started` + 5 cats + minutes + source + fetched_at.
+- Indexes: `(player_id)`, `(game_date)`, `(season, game_date)` for the scoreboard's time-window queries.
+
+### Ownership-window aggregation deferred to CP9
+The schema supports it, but no scoreboard query is built yet. CP8 reads "current ownership × game_stats" only. CP9 adds the partitioning logic when the transactions UI lands.
+
+### Scripts
+- `scripts/discover-bbr-slugs.py [--season 2025]` — one-time bootstrap. Scrapes BBR totals, name-matches against `players`, populates `bbr_slug`.
+- `scripts/refresh-gamelogs.py [--season 2026] [--slug X] [--limit N]` — daily ingest. Iterates players-with-slugs, scrapes each gamelog, upserts `game_stats`. Single-player smoke path via `--slug`.
+
+### Bootstrap state (from 2025 totals)
+- 182 players in BBR's 2025 totals page
+- 146 / 285 DB players matched by normalized name. Updated in place; idempotent on rerun.
+- 3 / 48 rostered players unmatched: Azzi Fudd, Olivia Miles (rookies), Luisa Geiselsoder (international with no prior WNBA play). Skipped silently by `refresh-gamelogs.py` (filter is `bbr_slug IS NOT NULL`); they'll get slugs once they appear in 2026's totals page (BBR populates it as games are played).
+- Tina Charles matched to `charlti01w` — she did play in 2025 after all (CP2 NOTES had flagged her as retired, evidently outdated).
+
+### Verification
+- Smoke `--slug wilsoa01w --season 2025` → 40 games scraped, all 5 cats present, dates ISO-parsed, minutes converted from `MM:SS` to decimal. Matches her 2025 GP exactly.
+- Smoke `--season 2026 --limit 5` → 0 games for all 5 players (pre-season). Empty pages handled gracefully (BBR returns 200 with no `wnba_pgl_basic` table; parser returns `[]`).
+- DB: `game_stats` has 0 rows post-smoke — exactly the live-scoreboard starting state per the user's "everyone at 0 today" rule.
+
+### Refresh.py integration deferred
+`refresh-gamelogs.py` is intentionally separate from the daily `refresh.py`. Game logs grow ~150 fetches/day (~7 min); season totals + injuries are ~75 sec. Different cadences make sense — totals + injuries can be triggered manually anytime, gamelogs run once a day after the slate. May fold into a single launcher in CP12 polish.
+
+### Known gaps
+- Rookie / 2026-only signing slug discovery: when 2026 totals page populates (post-season-start), re-run `discover-bbr-slugs --season 2026` to fill in Fudd / Miles / Geiselsoder. Earlier (during the season) we'd need a name-search fallback against BBR's player search. Defer until it bites.
