@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { fetchDraftState, type DraftState } from './api'
 import { Setup } from './views/Setup'
 import { Draft } from './views/Draft'
+import { Scoreboard } from './views/Scoreboard'
 
-type Mode = 'loading' | 'setup' | 'draft'
+type Mode = 'loading' | 'setup' | 'draft' | 'scoreboard'
 
 function App() {
   const [mode, setMode] = useState<Mode>('loading')
@@ -15,7 +16,15 @@ function App() {
     try {
       const s = await fetchDraftState()
       setInitialState(s)
-      setMode(s.teams.length === 0 ? 'setup' : 'draft')
+      if (s.teams.length === 0) {
+        setMode('setup')
+      } else if (s.is_complete) {
+        // Once the draft is over, the scoreboard is the home view.
+        // Draft board stays accessible via the toggle in the header.
+        setMode((cur) => (cur === 'draft' ? 'draft' : 'scoreboard'))
+      } else {
+        setMode('draft')
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setMode('setup')
@@ -49,7 +58,11 @@ function App() {
     return <Setup initialTeams={initial} onSetupComplete={refresh} />
   }
 
-  return <Draft onReset={refresh} />
+  if (mode === 'scoreboard') {
+    return <Scoreboard onSwitchToDraft={() => setMode('draft')} />
+  }
+
+  return <Draft onReset={refresh} onSwitchToScoreboard={() => setMode('scoreboard')} />
 }
 
 export default App

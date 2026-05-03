@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
-from app.routers import draft, health, players
+from app.routers import draft, health, players, standings
 
 
 @asynccontextmanager
@@ -30,3 +30,4 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(players.router, prefix="/api")
 app.include_router(draft.router, prefix="/api")
+app.include_router(standings.router, prefix="/api")

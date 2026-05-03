@@ -200,3 +200,42 @@ The schema supports it, but no scoreboard query is built yet. CP8 reads "current
 
 ### Known gaps
 - Rookie / 2026-only signing slug discovery: when 2026 totals page populates (post-season-start), re-run `discover-bbr-slugs --season 2026` to fill in Fudd / Miles / Geiselsoder. Earlier (during the season) we'd need a name-search fallback against BBR's player search. Defer until it bites.
+
+---
+
+## 2026-05-03 — Checkpoint 8: Live scoreboard
+
+### Surface scope
+Brand new view: shows each fantasy team's 2026 totals + per-cat rotis rank + rank-sum standings, all 8 teams, click-to-expand for the per-player breakdown. Pre-season everyone is at 0 in every cat, all teams tie for 1st (rank-sum 22.5). Once 2026 games land in `game_stats`, ranks shift live.
+
+### Backend (`app/standings.py` + `routers/standings.py`)
+- `compute_standings(db, season)` — joins current `rosters` × `game_stats` (season filtered), aggregates 5 cats per team, ranks per cat with **tie-aware averaging** (8 teams tied at 0 each get rank (1+8)/2 = 4.5 — clean pre-season state), sums to rank-sum, derives final standing from -rank_sum (lower = better).
+- `aggregate_team_totals(db, team_player_map, season)` is split out so CP11's transaction simulator can call it with mocked rosters (drop X, add Y → here are the new totals).
+- `_project_total(current, team_games, full_season)` — linear extrapolation per team: `current × 44 / team_games`. Per-team denominator (not global) so a team whose roster has fewer game-played rows projects from its own pace, not penalized by another team's faster start. `team_games_played = max GP across roster` (rough "weeks elapsed for this team").
+- Endpoint: `GET /api/standings?season=2026` → flat JSON with teams sorted by standing, includes per-team `cats[c] = {total, rank, projected}` and the full player breakdown inline.
+
+### Backdating: deferred to CP9
+Reads current ownership only. Schema supports ownership-window attribution via `transactions.effective_date`; aggregator will be swapped for the windowed version once the transactions UI lands.
+
+### Frontend (`views/Scoreboard.tsx`)
+- Table: standing # / Owner (★ for is_my_team) / Σ rank / GP / 5 cats with `total #rank`. Click a row → inline player table appears under it (same shape as the team-total row), with rookie + injury badges on each player.
+- "Show projection" header toggle flips the per-cat cells from current totals to full-season projections. Player table footer also shows a projected row when toggled on.
+- Pre-season explainer line below the table when `league_games_to_date === 0`. Disappears once games land.
+
+### Routing (`App.tsx`)
+- New `Mode = 'loading' | 'setup' | 'draft' | 'scoreboard'`.
+- After draft setup is done: if `is_complete`, default to `scoreboard`. If still drafting, default to `draft`. Both views have a header button to flip to the other.
+- Draft.tsx now takes optional `onSwitchToScoreboard`. The Scoreboard button only renders if that prop is supplied (Setup → Draft initial path doesn't need it).
+
+### Verification
+- Pre-season: all 8 teams at rank 4.5 in every cat, rank-sum 22.5, all tied for 1st. Confirmed via direct call into `compute_standings`.
+- Synthetic injection (1 game per top-3 teams, rolled back): A'ja Wilson 30/15/4/2/3 → Cole rank-sum 7.5 standing 1; Sean and Bubba ordered correctly behind. STL ties (2-2) split at rank 1.5; BLK 6-way tie at 0 averaged to 5.5. Math matches PLAN.md rotis convention.
+- Endpoint smoke via `TestClient` (httpx wasn't installed, fell back to direct serializer call) and live `curl http://localhost:8000/api/standings?season=2026` — both return 200, payload structure as expected.
+- Frontend `npx tsc --noEmit` clean.
+
+### Visual verification still needed
+I haven't opened the page in a browser. User should `launch.bat` (or `uvicorn ...` + `npm run dev`) and confirm: scoreboard renders, all 8 teams in the table, expand-row works, projection toggle flips totals, Draft-board button toggles back to the existing draft view.
+
+### Known follow-ups
+- A live "since-last-refresh" delta (who moved up/down rank-sum) would be nice. Not built — defer to CP12 polish or a dedicated CP if the user finds it valuable.
+- `FULL_SEASON_GAMES = 44` is a constant in `standings.py`. If the WNBA tweaks the schedule mid-2026, just bump it.

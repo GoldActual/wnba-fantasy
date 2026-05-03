@@ -174,3 +174,51 @@ export const makePick = (player_id: number, team_id?: number) =>
 export const undoLastPick = () => apiDelete<DraftState>('/api/draft/pick/last')
 
 export const draftCsvUrl = '/api/draft/csv'
+
+// ---- Standings (CP8) ----
+
+export type Cat = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
+
+export type StandingsCatLine = {
+  total: number
+  rank: number       // tie-aware (e.g. 4.5 when all teams tied at 0)
+  projected: number  // linear-pace extrapolation to full season
+}
+
+export type StandingsPlayer = {
+  player_id: number
+  name: string
+  positions: string[]
+  wnba_team: string | null
+  is_rookie: boolean
+  games: number
+  points: number
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+  injury_status: string | null
+}
+
+export type StandingsTeam = {
+  team_id: number
+  team_name: string
+  is_my_team: boolean
+  draft_slot: number
+  games_played: number  // max GP across this team's roster
+  rank_sum: number      // sum of 5 cat ranks, lower = better
+  standing: number      // 1..N tie-aware overall place
+  cats: Record<Cat, StandingsCatLine>
+  players: StandingsPlayer[]
+}
+
+export type StandingsResponse = {
+  season: number
+  league_games_to_date: number
+  full_season_games: number
+  computed_at: string
+  teams: StandingsTeam[]
+}
+
+export const fetchStandings = (season = 2026) =>
+  apiFetch<StandingsResponse>(`/api/standings?season=${season}`)
