@@ -4,8 +4,9 @@ import { Setup } from './views/Setup'
 import { Draft } from './views/Draft'
 import { Scoreboard } from './views/Scoreboard'
 import { Transactions } from './views/Transactions'
+import { Players } from './views/Players'
 
-type Mode = 'loading' | 'setup' | 'draft' | 'scoreboard' | 'transactions'
+type Mode = 'loading' | 'setup' | 'draft' | 'scoreboard' | 'transactions' | 'players'
 
 function App() {
   const [mode, setMode] = useState<Mode>('loading')
@@ -21,9 +22,11 @@ function App() {
         setMode('setup')
       } else if (s.is_complete) {
         // Once the draft is over, the scoreboard is the home view.
-        // Draft board + transactions stay accessible via header toggles.
+        // Other in-season views stay accessible via header toggles.
         setMode((cur) =>
-          cur === 'draft' || cur === 'transactions' ? cur : 'scoreboard',
+          cur === 'draft' || cur === 'transactions' || cur === 'players'
+            ? cur
+            : 'scoreboard',
         )
       } else {
         setMode('draft')
@@ -66,6 +69,7 @@ function App() {
       <Scoreboard
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToTransactions={() => setMode('transactions')}
+        onSwitchToPlayers={() => setMode('players')}
       />
     )
   }
@@ -75,6 +79,17 @@ function App() {
       <Transactions
         onSwitchToScoreboard={() => setMode('scoreboard')}
         onSwitchToDraft={() => setMode('draft')}
+        onSwitchToPlayers={() => setMode('players')}
+      />
+    )
+  }
+
+  if (mode === 'players') {
+    return (
+      <Players
+        onSwitchToScoreboard={() => setMode('scoreboard')}
+        onSwitchToDraft={() => setMode('draft')}
+        onSwitchToTransactions={() => setMode('transactions')}
       />
     )
   }
@@ -84,6 +99,7 @@ function App() {
       onReset={refresh}
       onSwitchToScoreboard={() => setMode('scoreboard')}
       onSwitchToTransactions={() => setMode('transactions')}
+      onSwitchToPlayers={() => setMode('players')}
     />
   )
 }

@@ -26,9 +26,18 @@ from statistics import mean, pstdev
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Injury, Player, StatsSeason
+from app.models import GameStats, Injury, Player, StatsSeason
 
+CURRENT_SEASON = 2026
 ROOKIE_PROJECTION_SEASON = 2026
+
+# Once a player has at least this many 2026 games in `game_stats`, we cut
+# their value-basis over from prior-year totals to current-season actuals.
+# Rationale: ~10 games is enough sample to be more predictive than the
+# previous season's totals, especially for rookies / role-changers / new
+# coaching schemes. Below the threshold we still use prior-year so the
+# FA finder + drop-candidate views aren't garbage in the first 2 weeks.
+SEASON_BASIS_GAMES_THRESHOLD = 10
 
 CATS = ("points", "rebounds", "assists", "steals", "blocks")
 GAMES_FULL_SEASON = 32  # availability penalty: floor at games/32
@@ -90,35 +99,83 @@ class PlayerValue:
     stats_source: str         # 'wnba_actual' | 'ncaa_projection'
 
 
+def _aggregate_current_season_basis(db: Session) -> dict[int, StatsSeason]:
+    """Build synthetic StatsSeason rows from 2026 `game_stats` for players who
+    have at least SEASON_BASIS_GAMES_THRESHOLD games. These rows are NOT
+    persisted — they're constructed in-memory each call so the value engine
+    can prefer current-season actuals over last year once the sample is
+    meaningful.
+
+    Returns {player_id: synthetic_row}. Players below the threshold are
+    omitted; callers fall back to prior-year basis for them."""
+    rows = list(db.scalars(select(GameStats).where(GameStats.season == CURRENT_SEASON)).all())
+    by_player: dict[int, list[GameStats]] = {}
+    for g in rows:
+        by_player.setdefault(g.player_id, []).append(g)
+
+    out: dict[int, StatsSeason] = {}
+    for pid, games in by_player.items():
+        if len(games) < SEASON_BASIS_GAMES_THRESHOLD:
+            continue
+        # Synthesize a StatsSeason-shaped row. Not persisted; the value
+        # pipeline only reads cat fields + games_played.
+        synth = StatsSeason(
+            player_id=pid,
+            season=CURRENT_SEASON,
+            source="wnba_actual",
+            games_played=len(games),
+            minutes=sum(g.minutes for g in games),
+            points=sum(g.points for g in games),
+            rebounds=sum(g.rebounds for g in games),
+            assists=sum(g.assists for g in games),
+            steals=sum(g.steals for g in games),
+            blocks=sum(g.blocks for g in games),
+        )
+        out[pid] = synth
+    return out
+
+
 def _basis_stats_by_player(db: Session) -> dict[int, StatsSeason]:
     """For each player, pick the StatsSeason row used as their value basis.
 
-    Vet basis = the most recent `wnba_actual` season with G >= MIN_HEALTHY_GAMES,
-    falling back to the most recent of any size if no healthy year exists.
-    This way Clark (13 G in 2025) and Stewart (31 G) get evaluated on their
-    last full season instead of an injury-noise sample.
+    Priority:
+      1. **Current-season actuals** if the player has >= SEASON_BASIS_GAMES_THRESHOLD
+         games in `game_stats` for the current season. Synthesized in-memory
+         from the per-game logs (CP7); not persisted.
+      2. Most recent prior-year `wnba_actual` with G >= MIN_HEALTHY_GAMES,
+         falling back to the most recent of any size if no healthy year exists.
+         (Clark 2024, Stewart 2025-or-2024 depending on G.)
+      3. Rookie projection (season=ROOKIE_PROJECTION_SEASON, source='ncaa_projection')
+         used only when a player has no wnba_actual rows of any season.
 
-    Rookie basis = (season=ROOKIE_PROJECTION_SEASON, source='ncaa_projection'),
-    used only when a player has no wnba_actual rows — real stats always
-    trump projection.
+    The current-season cutover (#1) is what makes the in-season FA finder
+    and drop-candidate views useful — once a player has accumulated real
+    2026 data, that drives their value, not last year.
     """
     out: dict[int, StatsSeason] = {}
 
+    # 1) Current-season actuals (CP10).
+    out.update(_aggregate_current_season_basis(db))
+
+    # 2) Prior-year wnba_actual fallback for anyone not in (1).
     vet_by_player: dict[int, list[StatsSeason]] = {}
     for s in db.scalars(select(StatsSeason).where(StatsSeason.source == "wnba_actual")).all():
         vet_by_player.setdefault(s.player_id, []).append(s)
     for pid, rows in vet_by_player.items():
-        rows.sort(key=lambda r: r.season, reverse=True)  # newest first
+        if pid in out:
+            continue
+        rows.sort(key=lambda r: r.season, reverse=True)
         healthy = next((r for r in rows if r.games_played >= MIN_HEALTHY_GAMES), None)
         out[pid] = healthy or rows[0]
 
+    # 3) Rookie projection if no actuals at all.
     for s in db.scalars(
         select(StatsSeason).where(
             StatsSeason.season == ROOKIE_PROJECTION_SEASON,
             StatsSeason.source == "ncaa_projection",
         )
     ).all():
-        out.setdefault(s.player_id, s)  # don't overwrite a wnba_actual row
+        out.setdefault(s.player_id, s)
 
     return out
 

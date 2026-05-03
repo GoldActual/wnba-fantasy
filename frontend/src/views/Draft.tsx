@@ -17,6 +17,7 @@ type DraftProps = {
   onReset: () => void
   onSwitchToScoreboard?: () => void
   onSwitchToTransactions?: () => void
+  onSwitchToPlayers?: () => void
 }
 
 type Cats = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
@@ -180,7 +181,12 @@ function openPositionalNeeds(teamId: number, state: DraftState): Set<Exclude<Slo
   return needs
 }
 
-export function Draft({ onReset, onSwitchToScoreboard, onSwitchToTransactions }: DraftProps) {
+export function Draft({
+  onReset,
+  onSwitchToScoreboard,
+  onSwitchToTransactions,
+  onSwitchToPlayers,
+}: DraftProps) {
   const [state, setState] = useState<DraftState | null>(null)
   const [players, setPlayers] = useState<Player[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -411,6 +417,14 @@ export function Draft({ onReset, onSwitchToScoreboard, onSwitchToTransactions }:
                 className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Transactions
+              </button>
+            )}
+            {onSwitchToPlayers && (
+              <button
+                onClick={onSwitchToPlayers}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Players
               </button>
             )}
             <button

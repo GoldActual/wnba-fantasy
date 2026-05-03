@@ -25,6 +25,7 @@ import { ThemeToggle } from '../components/ThemeToggle'
 type Props = {
   onSwitchToScoreboard: () => void
   onSwitchToDraft: () => void
+  onSwitchToPlayers: () => void
 }
 
 function todayIso(): string {
@@ -355,7 +356,11 @@ function EventRow({
   )
 }
 
-export function Transactions({ onSwitchToScoreboard, onSwitchToDraft }: Props) {
+export function Transactions({
+  onSwitchToScoreboard,
+  onSwitchToDraft,
+  onSwitchToPlayers,
+}: Props) {
   const [data, setData] = useState<TransactionsResponse | null>(null)
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [allPlayers, setAllPlayers] = useState<Player[] | null>(null)
@@ -449,6 +454,12 @@ export function Transactions({ onSwitchToScoreboard, onSwitchToDraft }: Props) {
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Scoreboard
+            </button>
+            <button
+              onClick={onSwitchToPlayers}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Players
             </button>
             <button
               onClick={onSwitchToDraft}

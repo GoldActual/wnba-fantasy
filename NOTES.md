@@ -307,3 +307,38 @@ The backend `record_trade` function and `POST /api/transactions/trade` endpoint 
 - Backdating that crosses an existing later event isn't auto-cascaded by the undo path; user must delete events in reverse chronological order (UI doesn't enforce this; we surface it as a usage rule). The user is the only operator, so this is fine.
 - No "preview impact before committing" dialog yet. Defer to CP11 simulator — that's the natural home for "if I do X, here's the standings delta" reasoning.
 - Visual verification still owed (user is on mobile). All TS / endpoint smokes are green.
+
+---
+
+## 2026-05-03 — Checkpoint 10: FA finder + drop candidates
+
+### Value basis cutover (`app/value.py`)
+The big behavioral change: `_basis_stats_by_player` now picks current-season actuals from `game_stats` once a player has at least `SEASON_BASIS_GAMES_THRESHOLD = 10` games in 2026. Below the threshold we keep prior-year basis (so the FA finder + drop-candidate views aren't garbage in the first 2 weeks).
+
+`_aggregate_current_season_basis(db)` builds synthetic `StatsSeason` rows in memory from the per-game logs — not persisted. The synthetic row carries the cat sums and the games_played count; the existing value pipeline (z-scores × availability × position × injury × rookie) reads it like any other basis row.
+
+Priority order:
+1. Current-season actuals (≥ 10 GP in 2026).
+2. Prior-year `wnba_actual` (most recent healthy season, MIN_HEALTHY_GAMES = 35).
+3. Rookie projection (`ncaa_projection`).
+
+Smoke verified:
+- Pre-season top 5 unchanged (A'ja, Alyssa, Caitlin, Stewart, Aliyah) — no game_stats means everyone falls through to prior-year.
+- Inject 10 mediocre 2026 games for A'ja → her value drops from 14.48 to -0.83 (current-season basis kicks in). With 9 games she stays at 14.48 (below threshold, prior-year still wins). Cutover behavior is sharp and correct.
+
+### Frontend — `views/Players.tsx`
+Single in-season player view with two modes:
+- **Free Agents** (default) — un-rostered players, sorted by value desc. "Top of the list is the strongest available pickup."
+- **Roster Health** — pick any team via the selector (defaults to ★ my-team), shows that team's 6 players sorted by value asc. The lowest-value row is highlighted with a `DROP CANDIDATE` badge. Works for opponents too — useful for spotting their weaknesses.
+
+Filters mirror the Best Available view: search box, position tabs (All/G/F/C), Hide Out toggle. No rookie filter — by mid-season rookies are just players, and the cutover means their stats are real.
+
+The full nav header is on every view now: Scoreboard / Players / Transactions / Draft board. App.tsx routes between them. Default home post-draft remains Scoreboard.
+
+### What's deferred to CP11
+- The actual "what if?" simulator that compares a hypothetical drop+add against current standings. The Players view shows you who's best and who's weakest, but doesn't yet model the standings delta of a specific swap. That's CP11's whole purpose.
+
+### Known follow-ups
+- Three rostered players still have no `bbr_slug` (Fudd, Miles, Geiselsoder — pre-WNBA-debut). Once they play and BBR's 2026 totals page lists them, re-run `discover-bbr-slugs --season 2026`. Until then they show prior-year basis = projection or zero, which is correct.
+- The "Hide Out" filter is a hard exclude. Could add a "Hide DTD" too, but DTD players sometimes still play — leaving them visible (with the 🟡 badge) is the safer default.
+- Visual verification still owed across CP8/CP9/CP10.

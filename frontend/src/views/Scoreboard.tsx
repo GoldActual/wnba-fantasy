@@ -131,9 +131,14 @@ function TeamPanel({
 type ScoreboardProps = {
   onSwitchToDraft: () => void
   onSwitchToTransactions: () => void
+  onSwitchToPlayers: () => void
 }
 
-export function Scoreboard({ onSwitchToDraft, onSwitchToTransactions }: ScoreboardProps) {
+export function Scoreboard({
+  onSwitchToDraft,
+  onSwitchToTransactions,
+  onSwitchToPlayers,
+}: ScoreboardProps) {
   const [data, setData] = useState<StandingsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -184,6 +189,13 @@ export function Scoreboard({ onSwitchToDraft, onSwitchToTransactions }: Scoreboa
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
             >
               {busy ? '…' : 'Refresh'}
+            </button>
+            <button
+              type="button"
+              onClick={onSwitchToPlayers}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Players
             </button>
             <button
               type="button"
