@@ -132,12 +132,14 @@ type ScoreboardProps = {
   onSwitchToDraft: () => void
   onSwitchToTransactions: () => void
   onSwitchToPlayers: () => void
+  onSwitchToSimulator: () => void
 }
 
 export function Scoreboard({
   onSwitchToDraft,
   onSwitchToTransactions,
   onSwitchToPlayers,
+  onSwitchToSimulator,
 }: ScoreboardProps) {
   const [data, setData] = useState<StandingsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -196,6 +198,13 @@ export function Scoreboard({
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Players
+            </button>
+            <button
+              type="button"
+              onClick={onSwitchToSimulator}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Simulator
             </button>
             <button
               type="button"

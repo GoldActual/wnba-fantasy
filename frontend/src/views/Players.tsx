@@ -18,6 +18,7 @@ type Props = {
   onSwitchToScoreboard: () => void
   onSwitchToDraft: () => void
   onSwitchToTransactions: () => void
+  onSwitchToSimulator: () => void
 }
 
 function injuryBadge(status: string | null): { dot: string; tone: string } {
@@ -27,7 +28,12 @@ function injuryBadge(status: string | null): { dot: string; tone: string } {
   return { dot: '🟡', tone: 'text-amber-700 dark:text-amber-300' }
 }
 
-export function Players({ onSwitchToScoreboard, onSwitchToDraft, onSwitchToTransactions }: Props) {
+export function Players({
+  onSwitchToScoreboard,
+  onSwitchToDraft,
+  onSwitchToTransactions,
+  onSwitchToSimulator,
+}: Props) {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [allPlayers, setAllPlayers] = useState<Player[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -110,6 +116,12 @@ export function Players({ onSwitchToScoreboard, onSwitchToDraft, onSwitchToTrans
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Scoreboard
+            </button>
+            <button
+              onClick={onSwitchToSimulator}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Simulator
             </button>
             <button
               onClick={onSwitchToTransactions}

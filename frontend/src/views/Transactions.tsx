@@ -26,6 +26,7 @@ type Props = {
   onSwitchToScoreboard: () => void
   onSwitchToDraft: () => void
   onSwitchToPlayers: () => void
+  onSwitchToSimulator: () => void
 }
 
 function todayIso(): string {
@@ -360,6 +361,7 @@ export function Transactions({
   onSwitchToScoreboard,
   onSwitchToDraft,
   onSwitchToPlayers,
+  onSwitchToSimulator,
 }: Props) {
   const [data, setData] = useState<TransactionsResponse | null>(null)
   const [draftState, setDraftState] = useState<DraftState | null>(null)
@@ -460,6 +462,12 @@ export function Transactions({
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Players
+            </button>
+            <button
+              onClick={onSwitchToSimulator}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Simulator
             </button>
             <button
               onClick={onSwitchToDraft}

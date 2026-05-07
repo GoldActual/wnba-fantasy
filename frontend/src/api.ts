@@ -297,3 +297,45 @@ export const postTrade = (body: {
 
 export const undoTransaction = (event_id: string) =>
   apiDelete<{ deleted_rows: number; event_id: string }>(`/api/transactions/${event_id}`)
+
+// ---- Simulator (CP11) ----
+
+export type SimCatLine = {
+  total: number
+  rank: number
+  projected: number
+}
+
+export type SimTeam = {
+  team_id: number
+  team_name: string
+  is_my_team: boolean
+  draft_slot: number
+  rank_sum: number
+  standing: number
+  team_games: number
+  cats: Record<Cat, SimCatLine>
+}
+
+export type SimWorld = {
+  teams: SimTeam[]
+}
+
+export type SimulatorResponse = {
+  season: number
+  full_season_games: number
+  league_games_to_date: number
+  picking_team_id: number
+  drop_player_id: number
+  drop_player_name: string
+  add_player_id: number
+  add_player_name: string
+  before: SimWorld
+  after: SimWorld
+}
+
+export const postSimulatorPickup = (body: {
+  team_id: number
+  drop_player_id: number
+  add_player_id: number
+}) => apiPost<SimulatorResponse>('/api/simulator/pickup', body)

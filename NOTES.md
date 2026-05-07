@@ -342,3 +342,47 @@ The full nav header is on every view now: Scoreboard / Players / Transactions / 
 - Three rostered players still have no `bbr_slug` (Fudd, Miles, Geiselsoder — pre-WNBA-debut). Once they play and BBR's 2026 totals page lists them, re-run `discover-bbr-slugs --season 2026`. Until then they show prior-year basis = projection or zero, which is correct.
 - The "Hide Out" filter is a hard exclude. Could add a "Hide DTD" too, but DTD players sometimes still play — leaving them visible (with the 🟡 badge) is the safer default.
 - Visual verification still owed across CP8/CP9/CP10.
+
+---
+
+## 2026-05-06 — Checkpoint 11: drop+add simulator
+
+### Backend — `app/simulator.py` + `routers/simulator.py`
+`POST /api/simulator/pickup` accepts `{team_id, drop_player_id, add_player_id}` and returns full before/after worlds. Pure read model — no DB writes.
+
+Attribution model is **all-season retroactive (option A)**: pretend the swap was in place from day 1. Every team's totals come from `aggregate_team_totals` over current rosters (after swap, for the picking team), summing 2026 game_stats. This intentionally diverges from the live scoreboard for any team that has executed a backdated trade — the live view honors ownership timelines, but the simulator's "before" baseline pretends current rosters were always current. Right framing for "would I be better off going forward?", and keeps before/after directly comparable.
+
+Other-team note: in this league there are no team-to-team trades, so the dropped player's stats simply vanish from the picking team in the after-world (they hit FA, no other team picks them up in the hypothetical). The added FA's full-season stats credit to the picking team. Other teams' totals are unchanged from before, so any rank shifts on other teams are pure consequences of the picking team's cat totals moving past or below them.
+
+Reused helpers from `standings.py` (kept private but stable signatures): `_rank_with_ties`, `_project_total`, `aggregate_team_totals`. Flat reuse — the world-builder is a thin loop over teams. `team_games` per simulated roster is `max(GP across roster)` for the projection denominator.
+
+Validation (returns 400 with descriptive message):
+- drop must be on `team_id` (errors with the actual owner if it's on someone else, or "is a free agent" if unrostered).
+- add must be currently unrostered.
+- drop ≠ add.
+- team must be active.
+
+Smoke verified directly:
+- Symmetric swap (drop big stats, add same big stats) → totals identical, standings unchanged. ✓
+- Asymmetric swap (drop big, add baseline) → Cole's pts 400→300, rank_sum 5.0→22.5, standing 1.0→4.5. ✓
+- All four error paths return descriptive `SimulatorError`. ✓
+
+### Frontend — `views/Simulator.tsx`
+Two-column setup card: pick a team (defaults to ★ my-team), radio-select one of their 6 to drop (sorted by value asc — lowest first, matching CP10 Roster Health), radio-select an FA (sorted by value desc, search + position filter, capped at top-50 visible to keep the list scannable). Big "Run simulation" button.
+
+Result panel:
+- Picking-team summary card with 4 metrics (standing, rank_sum, GP basis, league GP) — shows before strikethrough + after + Δ. Color: lower-is-better tones flip vs. higher-is-better cat totals. Picking team's per-cat total + rank delta table below.
+- All-teams overview table — every team's standing, rank_sum, and 5 cat ranks, with before→after pairs. Picking team highlighted sky-blue.
+- "Other teams that shifted" amber callout when a non-picking team's overall standing changed, so the user notices when a swap reshuffles more than just their own row.
+
+The full nav header now has 5 links across all views: Scoreboard / Players / Simulator / Transactions / Draft board.
+
+### Out of scope (deferred)
+- Effective-date picker (option B from CP11 design — partial-credit for from-date-forward swaps). Reasonable v2 if the all-season-retroactive framing ever feels wrong; it isn't today.
+- Trade-tree / multi-step (drop A add B then drop C add D) sims.
+- Persisting saved scenarios.
+- The simulator does NOT account for the 4-transaction-per-season cap. Cap usage lives in the Transactions view; not relevant for "what if" reasoning.
+
+### Known follow-ups (still)
+- Visual verification still owed across CP8/CP9/CP10/CP11.
+- Three rostered players still have no `bbr_slug` (Fudd, Miles, Geiselsoder).

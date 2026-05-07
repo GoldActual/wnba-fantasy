@@ -5,8 +5,16 @@ import { Draft } from './views/Draft'
 import { Scoreboard } from './views/Scoreboard'
 import { Transactions } from './views/Transactions'
 import { Players } from './views/Players'
+import { Simulator } from './views/Simulator'
 
-type Mode = 'loading' | 'setup' | 'draft' | 'scoreboard' | 'transactions' | 'players'
+type Mode =
+  | 'loading'
+  | 'setup'
+  | 'draft'
+  | 'scoreboard'
+  | 'transactions'
+  | 'players'
+  | 'simulator'
 
 function App() {
   const [mode, setMode] = useState<Mode>('loading')
@@ -24,7 +32,10 @@ function App() {
         // Once the draft is over, the scoreboard is the home view.
         // Other in-season views stay accessible via header toggles.
         setMode((cur) =>
-          cur === 'draft' || cur === 'transactions' || cur === 'players'
+          cur === 'draft' ||
+          cur === 'transactions' ||
+          cur === 'players' ||
+          cur === 'simulator'
             ? cur
             : 'scoreboard',
         )
@@ -70,6 +81,7 @@ function App() {
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToPlayers={() => setMode('players')}
+        onSwitchToSimulator={() => setMode('simulator')}
       />
     )
   }
@@ -80,6 +92,7 @@ function App() {
         onSwitchToScoreboard={() => setMode('scoreboard')}
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToPlayers={() => setMode('players')}
+        onSwitchToSimulator={() => setMode('simulator')}
       />
     )
   }
@@ -90,6 +103,18 @@ function App() {
         onSwitchToScoreboard={() => setMode('scoreboard')}
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToTransactions={() => setMode('transactions')}
+        onSwitchToSimulator={() => setMode('simulator')}
+      />
+    )
+  }
+
+  if (mode === 'simulator') {
+    return (
+      <Simulator
+        onSwitchToScoreboard={() => setMode('scoreboard')}
+        onSwitchToDraft={() => setMode('draft')}
+        onSwitchToTransactions={() => setMode('transactions')}
+        onSwitchToPlayers={() => setMode('players')}
       />
     )
   }
@@ -100,6 +125,7 @@ function App() {
       onSwitchToScoreboard={() => setMode('scoreboard')}
       onSwitchToTransactions={() => setMode('transactions')}
       onSwitchToPlayers={() => setMode('players')}
+      onSwitchToSimulator={() => setMode('simulator')}
     />
   )
 }
