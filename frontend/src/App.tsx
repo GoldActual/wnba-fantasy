@@ -6,6 +6,7 @@ import { Scoreboard } from './views/Scoreboard'
 import { Transactions } from './views/Transactions'
 import { Players } from './views/Players'
 import { Simulator } from './views/Simulator'
+import { Strategy } from './views/Strategy'
 
 type Mode =
   | 'loading'
@@ -15,6 +16,7 @@ type Mode =
   | 'transactions'
   | 'players'
   | 'simulator'
+  | 'strategy'
 
 function App() {
   const [mode, setMode] = useState<Mode>('loading')
@@ -35,7 +37,8 @@ function App() {
           cur === 'draft' ||
           cur === 'transactions' ||
           cur === 'players' ||
-          cur === 'simulator'
+          cur === 'simulator' ||
+          cur === 'strategy'
             ? cur
             : 'scoreboard',
         )
@@ -82,6 +85,7 @@ function App() {
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToPlayers={() => setMode('players')}
         onSwitchToSimulator={() => setMode('simulator')}
+        onSwitchToStrategy={() => setMode('strategy')}
       />
     )
   }
@@ -93,6 +97,7 @@ function App() {
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToPlayers={() => setMode('players')}
         onSwitchToSimulator={() => setMode('simulator')}
+        onSwitchToStrategy={() => setMode('strategy')}
       />
     )
   }
@@ -104,6 +109,7 @@ function App() {
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToSimulator={() => setMode('simulator')}
+        onSwitchToStrategy={() => setMode('strategy')}
       />
     )
   }
@@ -115,6 +121,19 @@ function App() {
         onSwitchToDraft={() => setMode('draft')}
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToPlayers={() => setMode('players')}
+        onSwitchToStrategy={() => setMode('strategy')}
+      />
+    )
+  }
+
+  if (mode === 'strategy') {
+    return (
+      <Strategy
+        onSwitchToScoreboard={() => setMode('scoreboard')}
+        onSwitchToDraft={() => setMode('draft')}
+        onSwitchToTransactions={() => setMode('transactions')}
+        onSwitchToPlayers={() => setMode('players')}
+        onSwitchToSimulator={() => setMode('simulator')}
       />
     )
   }
@@ -126,6 +145,7 @@ function App() {
       onSwitchToTransactions={() => setMode('transactions')}
       onSwitchToPlayers={() => setMode('players')}
       onSwitchToSimulator={() => setMode('simulator')}
+      onSwitchToStrategy={() => setMode('strategy')}
     />
   )
 }

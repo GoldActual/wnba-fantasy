@@ -340,6 +340,60 @@ export const postSimulatorPickup = (body: {
   add_player_id: number
 }) => apiPost<SimulatorResponse>('/api/simulator/pickup', body)
 
+// ---- Strategy (CP13) ----
+
+export type Classification = 'lock' | 'contend' | 'punt'
+
+export type CatStrategy = {
+  cat: Cat
+  current_total: number
+  current_rank: number
+  projected_total: number
+  projected_rank: number
+  gap_up: number | null      // my_projected - team_above_projected; null if #1
+  gap_down: number | null    // my_projected - team_below_projected; null if last
+  classification: Classification
+  weight: number
+}
+
+export type H2HCatLine = {
+  cat: Cat
+  my_total: number
+  opp_total: number
+  current_gap: number
+  my_projected: number
+  opp_projected: number
+  projected_gap: number
+  status: 'winning' | 'tied' | 'losing'
+}
+
+export type HeadToHead = {
+  opp_team_id: number
+  opp_team_name: string
+  opp_rank_sum: number
+  opp_standing: number
+  cats_winning: number
+  cats_losing: number
+  cats_tied: number
+  cats: H2HCatLine[]
+}
+
+export type StrategyResponse = {
+  team_id: number
+  team_name: string
+  is_my_team: boolean
+  team_games_played: number
+  avg_team_games: number
+  low_sample: boolean
+  rank_sum: number
+  standing: number
+  cats: CatStrategy[]
+  head_to_head: HeadToHead[]
+}
+
+export const fetchStrategy = (team_id: number, season = 2026) =>
+  apiFetch<StrategyResponse>(`/api/strategy?team_id=${team_id}&season=${season}`)
+
 // --- Data sync (BBR gamelogs + ESPN injuries) -------------------------------
 
 export type SyncStatus = {

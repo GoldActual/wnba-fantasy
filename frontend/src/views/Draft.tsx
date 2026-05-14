@@ -20,6 +20,7 @@ type DraftProps = {
   onSwitchToTransactions?: () => void
   onSwitchToPlayers?: () => void
   onSwitchToSimulator?: () => void
+  onSwitchToStrategy?: () => void
 }
 
 type Cats = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
@@ -189,6 +190,7 @@ export function Draft({
   onSwitchToTransactions,
   onSwitchToPlayers,
   onSwitchToSimulator,
+  onSwitchToStrategy,
 }: DraftProps) {
   const [state, setState] = useState<DraftState | null>(null)
   const [players, setPlayers] = useState<Player[] | null>(null)
@@ -428,6 +430,14 @@ export function Draft({
                 className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Players
+              </button>
+            )}
+            {onSwitchToStrategy && (
+              <button
+                onClick={onSwitchToStrategy}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Strategy
               </button>
             )}
             {onSwitchToSimulator && (

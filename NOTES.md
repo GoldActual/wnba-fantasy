@@ -386,3 +386,54 @@ The full nav header now has 5 links across all views: Scoreboard / Players / Sim
 ### Known follow-ups (still)
 - Visual verification still owed across CP8/CP9/CP10/CP11.
 - Three rostered players still have no `bbr_slug` (Fudd, Miles, Geiselsoder).
+
+---
+
+## 2026-05-14 — Checkpoint 13: Cat-targeting strategy view
+
+### Why this surface exists
+5-cat rotis with only 4 transactions per season is won by **deciding what to punt**, not by being balanced. The existing tools (FA finder, simulator) answer "is X a good pickup?" but never "is this cat worth spending a transaction on at all?". Strategy view fills that gap: each cat classified Lock / Contend / Punt with projected end-of-season rank, gap-up, gap-down. Suggested weights for FA reweighting are computed but not yet applied to the value pipeline (CP14).
+
+### `app/strategy.py` — pure layer on top of standings
+- Reuses `compute_standings()` (so ownership-window attribution from CP9 is honored automatically) plus the private `_rank_with_ties` for projection ranking.
+- For each cat: project end-of-season total using current team pace (`current * 44 / team_games`), re-rank teams on those projected totals to get `projected_rank`, compute `gap_up` and `gap_down` to the strictly-greater / strictly-lesser projected total.
+- Classification:
+  - **Lock**: no team strictly above me (gap_up is None — includes ties at #1) AND gap_down >= 15% of my projected total.
+  - **Punt**: in bottom 3 ranks AND |gap_up| >= 25% of the team-above's projected total.
+  - **Contend**: everything else.
+  - Encoded `gap_up is None` rather than `projected_rank <= 1` so ties at #1 stay Lock-eligible — being tied for first with a safe cushion is still "at the top".
+- `low_sample` flag set when avg team_games < 10. Doesn't force a classification — the math runs honestly; the UI shows a warning so the user can discount early-season noise without losing the signal.
+- Suggested weights for the CP14 FA reweighting hook: Lock = ×0.4, Contend = ×1.5, Punt = ×0.0.
+- Head-to-head: for every other team, per-cat (my_total, opp_total, gap, projected_gap, status). W-L-T summary at the top.
+
+### Endpoint
+- `GET /api/strategy?team_id=N&season=2026` → flat JSON, single payload per team. 400 with descriptive message if team_id isn't found.
+- Wired into `main.py` next to the other routers.
+
+### Smoke verification (today, 2026-05-14, avg_team_games=2.8 — low_sample regime)
+- Cole (st=3, rs=14): AST=Lock (tied 1.5 with Bubba at projected 836, gap_down=+154 vs #3 at 682), everything else Contend. ✓
+- Bubba (st=1, rs=9): AST=Lock (mirror of Cole). ✓
+- Tom (st=8, rs=36): POI/AST/STE/BLO all Punt. ✓
+- Eric (st=2, rs=12): BLK=Lock. Nik (st=4): STL=Lock, BLK=Punt. ✓
+- Initial implementation had `projected_rank <= LOCK_TOP_N` for Lock; ties at #1 (rank 1.5) failed the check. Refactored to `gap_up is None` — semantically what "at the top" means and naturally tie-tolerant.
+
+### Frontend — `views/Strategy.tsx`
+- Team picker (defaults to ★ my-team; works for any team — line with the all-teams-editable pattern).
+- Standings forecast table: Cat | Now | Proj | Rank now → proj | Gap↑ | Gap↓ | Class | Weight. Class badge color-coded emerald/sky/amber. Tooltips on gap columns explain the sign.
+- Low-sample warning banner above the forecast when applicable.
+- Head-to-head section: row of opponent buttons (each with name + W-L-T summary, sorted by their current standing), click to see per-cat detail table with current Δ + projected Δ + status badge.
+- Default opponent: the team currently ranked one position above me (the practical "who do I need to catch?" framing).
+- Full nav header: Scoreboard / Players / Strategy / Simulator / Transactions / Draft, plus Sync + Theme.
+
+### App.tsx routing
+- `Mode` adds `'strategy'`. Auto-stays on strategy mode if user is there when state refreshes. Every other view gains an `onSwitchToStrategy` prop + "Strategy" button in its nav header.
+
+### Out of scope (CP14 candidates)
+- **FA value reweighting** — the suggested weights are returned but not yet applied to `value.py`. CP14 will add a `cat_weights` parameter to the value pipeline and a `strategic_team_id` query param to `/api/players` that automatically pulls the weights for that team.
+- **Manual override** of classifications — for cases where the user has private info (e.g., "Sean's PG just got cut, BLK is more in play than the math says"). Likely a small `team_strategy_overrides.json` file or DB table.
+- **Transaction-budget-aware Punt threshold** — currently uses a flat 25% gap. Could compute "max plausible gain from N remaining transactions" per cat and use that as the unreachability floor.
+
+### Known limitations
+- Classifications are early-season-noisy until ~10 games per team (low_sample banner makes this explicit). Today's view is mostly Contend everywhere except for a few clear ties-for-first; will sharpen as data accumulates.
+- TestClient HTTP smoke test required `httpx` (not installed; same situation as CP8). Verified the serializer + endpoint logic by direct call to `_serialize(analyze_team(...))` — JSON shape matches the frontend types exactly.
+- Visual verification still owed (user is the only operator).

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
 from app.refresh import trigger_sync
-from app.routers import draft, health, players, refresh, simulator, standings, transactions
+from app.routers import draft, health, players, refresh, simulator, standings, strategy, transactions
 
 
 @asynccontextmanager
@@ -38,4 +38,5 @@ app.include_router(draft.router, prefix="/api")
 app.include_router(standings.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
 app.include_router(simulator.router, prefix="/api")
+app.include_router(strategy.router, prefix="/api")
 app.include_router(refresh.router, prefix="/api")

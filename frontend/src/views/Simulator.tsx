@@ -26,6 +26,7 @@ type Props = {
   onSwitchToDraft: () => void
   onSwitchToTransactions: () => void
   onSwitchToPlayers: () => void
+  onSwitchToStrategy: () => void
 }
 
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
@@ -63,6 +64,7 @@ export function Simulator({
   onSwitchToDraft,
   onSwitchToTransactions,
   onSwitchToPlayers,
+  onSwitchToStrategy,
 }: Props) {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [allPlayers, setAllPlayers] = useState<Player[] | null>(null)
@@ -186,6 +188,12 @@ export function Simulator({
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Players
+            </button>
+            <button
+              onClick={onSwitchToStrategy}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Strategy
             </button>
             <button
               onClick={onSwitchToTransactions}
