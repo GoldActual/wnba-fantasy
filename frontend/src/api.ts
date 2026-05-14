@@ -71,6 +71,7 @@ export type Player = {
   value: number
   raw_value: number
   marginal_value: number | null
+  strategy_weighted_value: number | null
   factors: {
     availability: number
     position: number
@@ -143,6 +144,9 @@ export type TeamSetupItem = {
 
 export type PlayersResponse = {
   count: number
+  for_team_id: number | null
+  strategic_team_id: number | null
+  strategy_weights: Record<string, number> | null
   players: Player[]
 }
 
@@ -153,6 +157,7 @@ export type PlayersQuery = {
   rookies_only?: boolean
   limit?: number
   for_team_id?: number
+  strategic_team_id?: number
 }
 
 export const fetchPlayers = (q: PlayersQuery = {}) =>

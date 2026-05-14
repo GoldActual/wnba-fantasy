@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Roster, Team
+from app.strategy import analyze_team
 from app.value import (
     CATS,
     PICKS_PER_TEAM,
@@ -27,6 +28,7 @@ from app.value import (
     compute_marginal_value,
     compute_pace_targets,
     compute_player_values,
+    compute_weighted_value,
 )
 
 router = APIRouter()
@@ -36,6 +38,7 @@ def _serialize(
     v: PlayerValue,
     drafted_by: dict[int, int],
     marginal_by_pid: dict[int, float] | None = None,
+    weighted_by_pid: dict[int, float] | None = None,
 ) -> dict:
     return {
         "player_id": v.player_id,
@@ -74,6 +77,11 @@ def _serialize(
             if marginal_by_pid is not None and v.player_id in marginal_by_pid
             else None
         ),
+        "strategy_weighted_value": (
+            round(weighted_by_pid[v.player_id], 3)
+            if weighted_by_pid is not None and v.player_id in weighted_by_pid
+            else None
+        ),
         "factors": {
             "availability": round(v.availability_factor, 3),
             "position": round(v.position_factor, 3),
@@ -92,6 +100,7 @@ def list_players(
     rookies_only: bool = Query(default=False),
     limit: int | None = Query(default=None, ge=1, le=1000),
     for_team_id: int | None = Query(default=None),
+    strategic_team_id: int | None = Query(default=None),
 ) -> dict:
     values = compute_player_values(db)
     drafted_by = {r.player_id: r.team_id for r in db.scalars(select(Roster)).all()}
@@ -116,6 +125,27 @@ def list_players(
             # Re-sort the list by marginal value when team-aware ranking is requested.
             values.sort(key=lambda v: marginal_by_pid[v.player_id], reverse=True)
 
+    # CP14 — strategy-weighted value. Apply per-cat weights from the strategy
+    # classifier (Lock=×0.4, Contend=×1.5, Punt=×0.0) so the FA list emphasizes
+    # the cats this team actually needs to push.
+    weighted_by_pid: dict[int, float] | None = None
+    strategy_weights: dict[str, float] | None = None
+    if strategic_team_id is not None:
+        try:
+            ts = analyze_team(db, team_id=strategic_team_id)
+            strategy_weights = {c.cat: c.weight for c in ts.cats}
+            weighted_by_pid = {
+                v.player_id: compute_weighted_value(v, strategy_weights)
+                for v in values
+            }
+            values.sort(key=lambda v: weighted_by_pid[v.player_id], reverse=True)
+        except ValueError:
+            # Bad team_id — silently fall back to flat sort. The strategy
+            # endpoint already 400s on this case; we don't want to break the
+            # players list over it.
+            weighted_by_pid = None
+            strategy_weights = None
+
     if search:
         q = search.lower().strip()
         values = [v for v in values if q in v.name.lower()]
@@ -134,5 +164,10 @@ def list_players(
     return {
         "count": len(values),
         "for_team_id": for_team_id,
-        "players": [_serialize(v, drafted_by, marginal_by_pid) for v in values],
+        "strategic_team_id": strategic_team_id,
+        "strategy_weights": strategy_weights,
+        "players": [
+            _serialize(v, drafted_by, marginal_by_pid, weighted_by_pid)
+            for v in values
+        ],
     }

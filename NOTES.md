@@ -437,3 +437,37 @@ The full nav header now has 5 links across all views: Scoreboard / Players / Sim
 - Classifications are early-season-noisy until ~10 games per team (low_sample banner makes this explicit). Today's view is mostly Contend everywhere except for a few clear ties-for-first; will sharpen as data accumulates.
 - TestClient HTTP smoke test required `httpx` (not installed; same situation as CP8). Verified the serializer + endpoint logic by direct call to `_serialize(analyze_team(...))` — JSON shape matches the frontend types exactly.
 - Visual verification still owed (user is the only operator).
+
+---
+
+## 2026-05-14 — Checkpoint 14: strategy-weighted FA value
+
+### Why this is the actual decision-changer
+CP13 surfaces classifications; CP14 makes them affect the FA value column. Without this, the strategy view is just a dashboard — the user still picks FAs from the same flat z-score sum. With CP14, the FA list automatically deprioritizes Locked cats and zeroes out Punted cats, so the top of the list reflects what the user actually needs to push, not what would help a generic team.
+
+### Backend — `value.py` + `routers/players.py`
+- `compute_weighted_value(pv, cat_weights)` in `value.py`: mirrors `compute_marginal_value` but applies per-cat weights to z-scores before multiplying through availability / position / injury / rookie factors. Single function; ~10 lines.
+- `routers/players.py`:
+  - New `strategic_team_id` query param.
+  - When provided, calls `analyze_team` to get weights, computes `strategy_weighted_value` for every player, re-sorts the list by it.
+  - Bad `team_id` is silently swallowed (returns flat ordering) — the strategy endpoint already 400s, no need to break the players list over it.
+  - Response gains `strategic_team_id`, `strategy_weights` (per-cat dict), and `strategy_weighted_value` per player (null when no strategy applied).
+
+### Smoke verification (Cole, 2026-05-14, AST=Lock all others Contend)
+- Cole's weights from analyze_team: `{PTS: 1.5, REB: 1.5, AST: 0.4, STL: 1.5, BLK: 1.5}`.
+- Flat top 10: A'ja Wilson, Alyssa Thomas, Caitlin Clark, Stewart, Boston, Hamby, Magbegor, Smith, Stevens, Collier.
+- Weighted top 10 for Cole: A'ja Wilson, Stewart, Boston, Magbegor, Stevens, Hamby, Smith, Collier, **Alyssa Thomas (#9)**, **Caitlin Clark (#10)**.
+- Thomas (AST_z=+4.45) and Clark (AST_z=+4.14) drop from #2/#3 to #9/#10 — their assist specialty isn't worth as much to a team that's already Locked the cat. Exactly the behavior we wanted. ✓
+
+### Frontend — `views/Players.tsx`
+- "Apply strategy weights" toggle in the filter row. Off by default.
+- When on, the team selector appears (even in FA mode, since the user needs to pick whose strategy applies) and a caption shows the active weights: "PTS×1.5 · REB×1.5 · AST×0.4 · STL×1.5 · BLK×1.5".
+- Table gains a "Weighted" column (only when toggle is on). Original Value column de-emphasizes (regular weight, slate-500) so the weighted score is the visual primary.
+- Sort + drop-candidate detection both fall back to weighted value when available. Backend already sorts that way; frontend re-sort matches so filtering (search, position, hide-out) doesn't shuffle the order back.
+- `refresh()` re-fetches when applyStrategy or teamId changes — accepts a single duplicate fetch on initial load (teamId starts null, gets defaulted, useEffect fires again) in exchange for the simpler effect-dependency model.
+
+### Out of scope
+- Manual classification override (still deferred — same hook as CP13).
+- Strategy weights in the Simulator. Could be useful: "if I do this swap with my current strategy applied, here's the standings impact". For v1 the Simulator stays unweighted since it's modelling the actual cat totals, not value scores.
+- Re-fetching strategy on a sync completion (right now the strategy weights snapshot at fetch time; if the user clicks Sync and gamelogs update, they need to toggle off + on to recompute).
+- The `for_team_id` (draft-time pace bias) and `strategic_team_id` are independent and can coexist on the same request, but they don't compose meaningfully — `for_team_id` is a draft-time concept. UI never sends both.

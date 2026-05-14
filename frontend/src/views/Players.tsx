@@ -47,6 +47,11 @@ export function Players({
   const [search, setSearch] = useState('')
   const [positionFilter, setPositionFilter] = useState<'ALL' | 'G' | 'F' | 'C'>('ALL')
   const [hideInjured, setHideInjured] = useState(false)
+  // CP14 — when on, value column is weighted by `teamId`'s strategy
+  // (Lock=×0.4, Contend=×1.5, Punt=×0.0). Off by default; the user opts in
+  // once classifications are meaningful (low-sample mode early-season).
+  const [applyStrategy, setApplyStrategy] = useState(false)
+  const [strategyWeights, setStrategyWeights] = useState<Record<string, number> | null>(null)
 
   const refresh = async () => {
     setBusy(true)
@@ -54,10 +59,14 @@ export function Players({
     try {
       const [d, p] = await Promise.all([
         fetchDraftState(),
-        fetchPlayers({ limit: 1000 }),
+        fetchPlayers({
+          limit: 1000,
+          ...(applyStrategy && teamId !== null ? { strategic_team_id: teamId } : {}),
+        }),
       ])
       setDraftState(d)
       setAllPlayers(p.players)
+      setStrategyWeights(p.strategy_weights)
       // Default the team selector to my-team if not set yet.
       if (teamId === null) {
         const mine = d.teams.find((t) => t.is_my_team)
@@ -72,7 +81,8 @@ export function Players({
 
   useEffect(() => {
     void refresh()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyStrategy, teamId])
 
   const filtered = useMemo(() => {
     if (!allPlayers) return []
@@ -94,11 +104,18 @@ export function Players({
       })
     }
     // FA mode: best at top. Roster mode: weakest at top (drop candidate).
+    // When strategy is applied, sort by the weighted value so the ordering
+    // reflects the cat weights (backend already sorts this way, but the
+    // filtered list may re-shuffle ties).
+    const score = (p: Player) =>
+      applyStrategy && p.strategy_weighted_value !== null
+        ? p.strategy_weighted_value
+        : p.value
     list = [...list].sort((a, b) =>
-      mode === 'roster' ? a.value - b.value : b.value - a.value,
+      mode === 'roster' ? score(a) - score(b) : score(b) - score(a),
     )
     return list
-  }, [allPlayers, mode, teamId, search, positionFilter, hideInjured])
+  }, [allPlayers, mode, teamId, search, positionFilter, hideInjured, applyStrategy])
 
   const dropCandidateId =
     mode === 'roster' && filtered.length > 0 ? filtered[0].player_id : null
@@ -184,11 +201,12 @@ export function Players({
             </button>
           </div>
 
-          {mode === 'roster' && (
+          {(mode === 'roster' || applyStrategy) && (
             <select
               value={teamId ?? ''}
               onChange={(e) => setTeamId(e.target.value ? Number(e.target.value) : null)}
               className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm"
+              title={applyStrategy ? 'Strategy weights apply to this team' : 'Team to inspect'}
             >
               <option value="">— pick a team —</option>
               {draftState?.teams.map((t) => (
@@ -199,6 +217,18 @@ export function Players({
               ))}
             </select>
           )}
+
+          <label
+            className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1"
+            title="Reweight FA value by the strategy classifier (Lock=×0.4, Contend=×1.5, Punt=×0.0) so the list emphasizes the cats this team actually needs to push."
+          >
+            <input
+              type="checkbox"
+              checked={applyStrategy}
+              onChange={(e) => setApplyStrategy(e.target.checked)}
+            />
+            Apply strategy weights
+          </label>
 
           <input
             type="text"
@@ -243,14 +273,29 @@ export function Players({
           </button>
         </div>
 
+        {applyStrategy && strategyWeights && (
+          <p className="text-xs text-slate-600 dark:text-slate-400 px-1">
+            Strategy weights in effect:{' '}
+            {CATS.map((c, i) => (
+              <span key={c}>
+                {i > 0 && ' · '}
+                <span className="font-medium">{CAT_LABEL[c]}</span>
+                ×{(strategyWeights[c] ?? 1).toFixed(1)}
+              </span>
+            ))}
+            <span className="ml-2 italic">
+              (Lock=×0.4, Contend=×1.5, Punt=×0.0 — set in the Strategy view)
+            </span>
+          </p>
+        )}
         {mode === 'roster' && filtered.length > 0 && (
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Sorted by value (lowest first) — top row is the current drop candidate.
+            Sorted by {applyStrategy ? 'weighted ' : ''}value (lowest first) — top row is the current drop candidate.
           </p>
         )}
         {mode === 'fa' && (
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Sorted by value (best first) — top of the list is the strongest available pickup.
+            Sorted by {applyStrategy ? 'weighted ' : ''}value (best first) — top of the list is the strongest available pickup.
           </p>
         )}
 
@@ -263,6 +308,14 @@ export function Players({
                   <th className="px-3 py-2">Player</th>
                   <th className="px-3 py-2 w-16">Pos</th>
                   <th className="px-3 py-2 w-16">Team</th>
+                  {applyStrategy && (
+                    <th
+                      className="px-3 py-2 w-20 text-right"
+                      title="Strategy-weighted value: z-scores reweighted by Lock/Contend/Punt classifications before applying availability/position/injury/rookie factors."
+                    >
+                      Weighted
+                    </th>
+                  )}
                   <th className="px-3 py-2 w-16 text-right">Value</th>
                   <th className="px-3 py-2 w-12 text-right">GP</th>
                   {CATS.map((c) => (
@@ -305,7 +358,21 @@ export function Players({
                       </td>
                       <td className="px-3 py-1.5">{p.positions.join('/')}</td>
                       <td className="px-3 py-1.5">{p.wnba_team ?? '—'}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums font-semibold">
+                      {applyStrategy && (
+                        <td className="px-3 py-1.5 text-right tabular-nums font-semibold">
+                          {p.strategy_weighted_value !== null
+                            ? p.strategy_weighted_value.toFixed(2)
+                            : '—'}
+                        </td>
+                      )}
+                      <td
+                        className={
+                          'px-3 py-1.5 text-right tabular-nums ' +
+                          (applyStrategy
+                            ? 'text-slate-500 dark:text-slate-400'
+                            : 'font-semibold')
+                        }
+                      >
                         {p.value.toFixed(2)}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
@@ -322,7 +389,7 @@ export function Players({
                 {filtered.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6 + CATS.length}
+                      colSpan={(applyStrategy ? 7 : 6) + CATS.length}
                       className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
                     >
                       No players match the current filters.

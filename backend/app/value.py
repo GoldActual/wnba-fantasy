@@ -358,6 +358,31 @@ def compute_marginal_value(
     return final
 
 
+def compute_weighted_value(
+    pv: PlayerValue,
+    cat_weights: dict[str, float],
+) -> float:
+    """Recompute a player's value using per-cat z-score weights instead of a
+    flat sum. Mirrors `compute_marginal_value` but for in-season strategy
+    weighting (CP14): the strategy view classifies each cat as Lock / Contend
+    / Punt and emits weights (0.4 / 1.5 / 0.0); apply them here so a FA whose
+    contributions are all in punted cats ranks correctly low for my team.
+
+    Multiplies the same availability / position / injury / rookie factors
+    through that `compute_player_values` applies, so the only difference vs
+    `pv.value` is the per-cat reweighting of the raw z-score sum."""
+    weighted_raw = sum(
+        getattr(pv, f"z_{c}") * cat_weights.get(c, 1.0) for c in CATS
+    )
+    return (
+        weighted_raw
+        * pv.availability_factor
+        * pv.position_factor
+        * pv.injury_factor
+        * pv.rookie_factor
+    )
+
+
 def per_cat_pace_status(
     team_totals: dict[str, int],
     pace_targets: dict[str, float],
