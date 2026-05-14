@@ -102,7 +102,7 @@ export function Players({
     mode === 'roster' && filtered.length > 0 ? filtered[0].player_id : null
 
   return (
-    <main className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <header className="sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
