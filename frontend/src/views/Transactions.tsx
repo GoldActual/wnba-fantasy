@@ -14,6 +14,7 @@ import {
   type TxnEvent,
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { SyncButton } from '../components/SyncButton'
 
 // League rule (memory: project_league_no_team_trades): every transaction is
 // 1-for-1, drop one rostered player + add one currently-unrostered player.
@@ -475,6 +476,7 @@ export function Transactions({
             >
               Draft board
             </button>
+            <SyncButton onSyncComplete={() => void refresh()} />
             <ThemeToggle />
           </div>
         </div>

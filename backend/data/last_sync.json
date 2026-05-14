@@ -1,0 +1,22 @@
+{
+  "last_completed_at": "2026-05-14T14:47:22+00:00",
+  "last_summary": {
+    "season": 2026,
+    "injuries": {
+      "fetched": 10,
+      "inserted": 4,
+      "updated": 6,
+      "unlinked": 0,
+      "deleted_stale": 1
+    },
+    "gamelogs": {
+      "players": 187,
+      "games_scraped": 324,
+      "inserted": 72,
+      "updated": 252,
+      "empty_players": 40,
+      "errors": 0
+    }
+  },
+  "last_error": null
+}

@@ -4,12 +4,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
-from app.routers import draft, health, players, simulator, standings, transactions
+from app.refresh import trigger_sync
+from app.routers import draft, health, players, refresh, simulator, standings, transactions
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Boot-time data refresh runs in a background thread so server startup
+    # is not blocked. Views show stale data until the sync completes; the
+    # status endpoint + Sync button surface progress.
+    trigger_sync()
     yield
 
 
@@ -33,3 +38,4 @@ app.include_router(draft.router, prefix="/api")
 app.include_router(standings.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
 app.include_router(simulator.router, prefix="/api")
+app.include_router(refresh.router, prefix="/api")

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchDraftState, fetchPlayers, type DraftState, type Player } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { SyncButton } from '../components/SyncButton'
 
 type Cat = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
@@ -135,6 +136,7 @@ export function Players({
             >
               Draft board
             </button>
+            <SyncButton onSyncComplete={() => void refresh()} />
             <ThemeToggle />
           </div>
         </div>

@@ -12,6 +12,7 @@ import {
   type Slot,
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { SyncButton } from '../components/SyncButton'
 
 type DraftProps = {
   onReset: () => void
@@ -35,7 +36,7 @@ const POSITIONAL_SLOTS: Array<Exclude<Slot, 'UTIL'>> = ['G', 'F', 'C']
 
 function injuryBadge(p: Player) {
   const status = p.injury_status
-  if (!status) return { dot: '🟢', tooltip: 'Healthy', tone: 'text-emerald-700' }
+  if (!status) return { dot: '🟢', tooltip: 'Healthy', tone: 'text-emerald-700 dark:text-emerald-400' }
   // Build a multi-line tooltip: status, description, ETA. <br>-style newlines
   // are flattened by the browser in title="" — \n is the right separator.
   const parts = [status]
@@ -43,8 +44,8 @@ function injuryBadge(p: Player) {
   if (p.injury_return_date) parts.push(`Est. return: ${p.injury_return_date}`)
   const tooltip = parts.join('\n')
   const s = status.toLowerCase()
-  if (s.includes('out')) return { dot: '🔴', tooltip, tone: 'text-red-700' }
-  return { dot: '🟡', tooltip, tone: 'text-amber-700' }
+  if (s.includes('out')) return { dot: '🔴', tooltip, tone: 'text-red-700 dark:text-red-300' }
+  return { dot: '🟡', tooltip, tone: 'text-amber-700 dark:text-amber-300' }
 }
 
 type Standing = {
@@ -444,6 +445,7 @@ export function Draft({
             >
               Reset
             </button>
+            <SyncButton onSyncComplete={() => void refresh()} />
             <ThemeToggle />
           </div>
         </div>
@@ -543,7 +545,7 @@ export function Draft({
           </div>
           <div className="overflow-x-auto max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-400 sticky top-0">
+              <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800/50 dark:text-slate-300 sticky top-0">
                 <tr className="text-left">
                   <th className="px-2 py-2 w-10 text-right">#</th>
                   <th className="px-2 py-2">Player</th>

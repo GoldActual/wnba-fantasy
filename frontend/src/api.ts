@@ -339,3 +339,23 @@ export const postSimulatorPickup = (body: {
   drop_player_id: number
   add_player_id: number
 }) => apiPost<SimulatorResponse>('/api/simulator/pickup', body)
+
+// --- Data sync (BBR gamelogs + ESPN injuries) -------------------------------
+
+export type SyncStatus = {
+  running: boolean
+  started_at: string | null  // ISO 8601 UTC
+  progress: string | null
+  last_completed_at: string | null
+  last_summary: {
+    season?: number
+    injuries?: { fetched: number; inserted: number; updated: number; unlinked: number; deleted_stale: number }
+    gamelogs?: { players: number; games_scraped: number; inserted: number; updated: number; empty_players: number; errors: number }
+  }
+  last_error: string | null
+  season: number
+}
+
+export const fetchSyncStatus = () => apiFetch<SyncStatus>('/api/refresh/status')
+
+export const triggerSync = () => apiPost<SyncStatus>('/api/refresh', {})

@@ -10,6 +10,7 @@ import {
   type SimulatorResponse,
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { SyncButton } from '../components/SyncButton'
 
 // CP11 — drop-rostered + add-FA simulator. Attribution model is
 // all-season retroactive: the simulator pretends the swap was in place
@@ -198,6 +199,7 @@ export function Simulator({
             >
               Draft board
             </button>
+            <SyncButton onSyncComplete={() => void refresh()} />
             <ThemeToggle />
           </div>
         </div>

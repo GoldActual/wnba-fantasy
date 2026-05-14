@@ -6,6 +6,7 @@ import {
   type StandingsTeam,
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { SyncButton } from '../components/SyncButton'
 
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
 const CAT_LABEL: Record<Cat, string> = {
@@ -220,6 +221,7 @@ export function Scoreboard({
             >
               Draft board
             </button>
+            <SyncButton onSyncComplete={() => void refresh()} />
             <ThemeToggle />
           </div>
         </div>
