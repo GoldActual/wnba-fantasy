@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
-from app.refresh import trigger_sync
 from app.routers import draft, health, players, refresh, simulator, standings, strategy, transactions, trends
 from app.scheduler import start_scheduler, stop_scheduler
 
@@ -18,10 +17,10 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "di
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Boot-time data refresh runs in a background thread so server startup
-    # is not blocked. Views show stale data until the sync completes; the
-    # status endpoint + Sync button surface progress.
-    trigger_sync()
+    # No boot-time sync. The Basketball-Reference scrape takes ~9 minutes
+    # and hits 187 pages, so re-running it on every code-push restart is
+    # wasteful. The daily 6am PT job (scheduler.py) keeps data fresh; the
+    # owner's "Sync data" button covers ad-hoc cases.
     start_scheduler()
     try:
         yield

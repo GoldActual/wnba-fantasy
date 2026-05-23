@@ -102,13 +102,14 @@ type FlatPoint = Record<string, string | number>
 
 function flatten(
   trends: TrendsResponse,
-  metric: 'standing' | Cat,
+  metric: 'standing' | 'rank_sum' | Cat,
 ): FlatPoint[] {
   return trends.days.map((d) => {
     const point: FlatPoint = { date: d.date }
     for (const [tid, snap] of Object.entries(d.teams)) {
       const name = trends.team_names[tid]
       if (metric === 'standing') point[name] = snap.standing
+      else if (metric === 'rank_sum') point[name] = snap.rank_sum
       else point[name] = snap.cats[metric]
     }
     return point
@@ -351,7 +352,25 @@ function TeamLegend({ teamOrder }: { teamOrder: TeamOrder[] }) {
   )
 }
 
-type ChartMode = 'cats' | 'standing'
+type ChartMode = 'rank_sum' | 'cats' | 'standing'
+
+const MODE_LABEL: Record<ChartMode, string> = {
+  rank_sum: 'Rank sum',
+  cats: 'By category',
+  standing: 'Standing',
+}
+
+const MODE_TITLE: Record<ChartMode, string> = {
+  rank_sum: 'Rank sum over time',
+  cats: 'Categories over time',
+  standing: 'Standing over time',
+}
+
+const MODE_HINT: Record<ChartMode, string> = {
+  rank_sum: 'sum of 5 cat ranks · lower = better',
+  cats: 'higher = better',
+  standing: 'lower = better · 1 = leader',
+}
 
 function ChartsSection({
   trends,
@@ -360,8 +379,12 @@ function ChartsSection({
   trends: TrendsResponse
   teamOrder: TeamOrder[]
 }) {
-  const [mode, setMode] = useState<ChartMode>('cats')
+  // Rank sum is the most informative single-chart view of league
+  // shape (where each team really stands across all 5 cats), so it's
+  // the default. Toggle in for per-cat detail or overall standing.
+  const [mode, setMode] = useState<ChartMode>('rank_sum')
 
+  const rankSumData = useMemo(() => flatten(trends, 'rank_sum'), [trends])
   const standingData = useMemo(() => flatten(trends, 'standing'), [trends])
   const catData: Record<Cat, FlatPoint[]> = useMemo(() => {
     const out = {} as Record<Cat, FlatPoint[]>
@@ -370,45 +393,44 @@ function ChartsSection({
   }, [trends])
 
   const numTeams = teamOrder.length || 8
+  const modes: ChartMode[] = ['rank_sum', 'cats', 'standing']
 
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="flex items-baseline justify-between mb-3 gap-2 flex-wrap">
-        <h2 className="text-sm font-semibold">
-          {mode === 'cats' ? 'Categories over time' : 'Standing over time'}
-        </h2>
+        <h2 className="text-sm font-semibold">{MODE_TITLE[mode]}</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            {mode === 'cats' ? 'higher = better' : 'lower = better · 1 = leader'}
+            {MODE_HINT[mode]}
           </span>
           <div className="inline-flex rounded-md border border-slate-300 dark:border-slate-700 overflow-hidden text-xs">
-            <button
-              type="button"
-              onClick={() => setMode('cats')}
-              className={
-                'px-2 py-1 ' +
-                (mode === 'cats'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800')
-              }
-            >
-              By category
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('standing')}
-              className={
-                'px-2 py-1 border-l border-slate-300 dark:border-slate-700 ' +
-                (mode === 'standing'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800')
-              }
-            >
-              Standing
-            </button>
+            {modes.map((m, i) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={
+                  'px-2 py-1 ' +
+                  (i > 0 ? 'border-l border-slate-300 dark:border-slate-700 ' : '') +
+                  (mode === m
+                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800')
+                }
+              >
+                {MODE_LABEL[m]}
+              </button>
+            ))}
           </div>
         </div>
       </div>
+
+      {mode === 'rank_sum' && (
+        <TrendLineChart
+          data={rankSumData}
+          teamOrder={teamOrder}
+          yReversed
+        />
+      )}
 
       {mode === 'standing' && (
         <TrendLineChart
