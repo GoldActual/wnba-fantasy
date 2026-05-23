@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchSyncStatus, triggerSync, type SyncStatus } from '../api'
+import { AdminAuthError, promptSignIn, useAdmin } from '../auth'
 
 const POLL_MS = 2000
 
@@ -22,6 +23,7 @@ function relativeTime(iso: string | null): string {
  * running sync transitions to idle, so the host view can re-fetch its
  * data. */
 export function SyncButton({ onSyncComplete }: { onSyncComplete?: () => void }) {
+  const { signedIn } = useAdmin()
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const wasRunningRef = useRef<boolean>(false)
@@ -72,12 +74,20 @@ export function SyncButton({ onSyncComplete }: { onSyncComplete?: () => void }) 
       setStatus(s)
       wasRunningRef.current = s.running
     } catch (e) {
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in to trigger a sync.')
+        return
+      }
       setError(e instanceof Error ? e.message : String(e))
     }
   }
 
   const running = status?.running ?? false
   const label = running ? 'Syncing…' : 'Sync data'
+  const disabled = running || !signedIn
+  // Public viewers see the status display but can't trigger a sync.
+  // Tooltip explains why the button is dimmed.
+  const adminTooltip = !signedIn ? 'Sign in to trigger a manual sync' : ''
 
   // Tooltip combines progress + last-completed timestamp so hover gives
   // the full picture without cluttering the button label.
@@ -96,15 +106,15 @@ export function SyncButton({ onSyncComplete }: { onSyncComplete?: () => void }) 
       : relativeTime(status?.last_completed_at ?? null)
 
   return (
-    <div className="flex flex-col items-end leading-tight" title={title}>
+    <div className="flex flex-col items-end leading-tight" title={adminTooltip || title}>
       <button
         type="button"
         onClick={() => void onClick()}
-        disabled={running}
+        disabled={disabled}
         className={`text-sm rounded-md border px-3 py-1.5 transition
           ${running
             ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200 cursor-wait'
-            : 'border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            : 'border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'}`}
       >
         {running && <span className="mr-1 inline-block animate-pulse">●</span>}
         {label}

@@ -234,16 +234,26 @@ def compute_standings(
                 bucket[c] += getattr(g, c)
             team_team_games[owner] = max(team_team_games[owner], bucket["games"])
 
+    # Build {team_id: set of player_ids ever owned} from the ownership timelines,
+    # so we can surface dropped players who left a footprint here even when
+    # their tenure produced 0 games (e.g. an injured player held + then
+    # dropped before they ever played). Without this, "drop-with-0-games"
+    # transactions vanish from the team panel and the trade looks invisible.
+    team_ever_owned: dict[int, set[int]] = {t.id: set() for t in teams}
+    for pid, windows in timelines.items():
+        for w in windows:
+            if w.team_id in team_ever_owned:
+                team_ever_owned[w.team_id].add(pid)
+
     # Pass 1b: build PlayerContribution rows. Each team gets:
     #   - All current rostered players (with stats from their tenure here, or 0s)
-    #   - Any "departed" players whose pre-trade tenure here still credits stats
-    #     to this team via the ownership timeline (so backdated trades surface
-    #     the original owner's contribution alongside who's currently rostered).
+    #   - Any "departed" player who EVER had an ownership window on this
+    #     team — even with 0 contributed games — so a drop is always visible
+    #     in the roster view, matching the way the league sheet records it.
     team_contribs: dict[int, list[PlayerContribution]] = {}
     for t in teams:
         current_pids = {r.player_id for r in rosters_by_team[t.id]}
-        contributing_pids = set(contribs_buckets[t.id].keys())
-        all_pids = current_pids | contributing_pids
+        all_pids = current_pids | team_ever_owned[t.id]
         contribs: list[PlayerContribution] = []
         for pid in all_pids:
             p = players.get(pid)

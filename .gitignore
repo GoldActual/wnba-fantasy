@@ -36,3 +36,8 @@ backend/data/*.db-shm
 
 # Local scratch dir for fixtures, dumps, etc.
 .tmp/
+
+# User-maintained source-of-truth spreadsheets — not part of the app.
+Previous Seasons/
+WNBA Draft *.xlsx
+WNBA Draft *.csv

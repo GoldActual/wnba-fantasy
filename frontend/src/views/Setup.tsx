@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { setupTeams, type TeamSetupItem } from '../api'
+import { AdminAuthError, promptSignIn, useAdmin } from '../auth'
+import { AuthChip } from '../components/AuthChip'
 import { ThemeToggle } from '../components/ThemeToggle'
 
 type SetupProps = {
@@ -27,6 +29,7 @@ const buildDefaultTeams = (n: number, prev: TeamSetupItem[] = []): TeamSetupItem
   })
 
 export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
+  const { signedIn } = useAdmin()
   const [count, setCount] = useState<number>(initialTeams.length || DEFAULT_COUNT)
   const [teams, setTeams] = useState<TeamSetupItem[]>(
     initialTeams.length ? initialTeams : buildDefaultTeams(DEFAULT_COUNT),
@@ -77,7 +80,11 @@ export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
       }
       onSetupComplete()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in as admin to set up teams.')
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
       setSubmitting(false)
     }
@@ -93,7 +100,10 @@ export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
               Configure team count, names, and the snake order. Editable until the first pick is made.
             </p>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <AuthChip />
+            <ThemeToggle />
+          </div>
         </header>
 
         {error && (
@@ -153,10 +163,15 @@ export function Setup({ initialTeams = [], onSetupComplete }: SetupProps) {
           </table>
 
           <div className="mt-6 flex items-center justify-end gap-3">
+            {!signedIn && (
+              <p className="text-xs text-slate-500 dark:text-slate-400 italic">
+                Sign in as admin to save.
+              </p>
+            )}
             <button
               onClick={submit}
-              disabled={submitting}
-              className="rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 px-4 py-2 text-sm font-medium hover:bg-slate-800 dark:hover:bg-slate-200 disabled:opacity-60"
+              disabled={submitting || !signedIn}
+              className="rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 px-4 py-2 text-sm font-medium hover:bg-slate-800 dark:hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {submitting ? 'Saving…' : 'Save and start drafting'}
             </button>

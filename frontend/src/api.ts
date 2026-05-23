@@ -1,3 +1,5 @@
+import { AdminAuthError, clearToken, getToken } from './auth'
+
 const buildQuery = (params: Record<string, string | number | boolean | undefined | null>) => {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
@@ -9,7 +11,15 @@ const buildQuery = (params: Record<string, string | number | boolean | undefined
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init)
+  // Attach admin token if signed in. Public reads still work without it;
+  // the backend gate only fires on write routes.
+  const token = getToken()
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  }
+  if (token) headers['X-Admin-Token'] = token
+
+  const res = await fetch(path, { ...init, headers })
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -17,6 +27,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       if (body?.detail) detail = body.detail
     } catch {
       // not JSON, ignore
+    }
+    // 401 means token is missing/wrong — drop the stale token so the UI
+    // re-prompts. Throw a typed error so views can distinguish.
+    if (res.status === 401) {
+      clearToken()
+      throw new AdminAuthError(detail)
     }
     throw new Error(`${res.status}: ${detail}`)
   }
@@ -61,6 +77,20 @@ export type Player = {
     steals: number
     blocks: number
   }
+  // 2026 actuals summed from game_stats. Parallel to `totals` (which may
+  // still be 2025-basis until the player crosses the 10-GP threshold).
+  season_totals: {
+    games_played: number
+    points: number
+    rebounds: number
+    assists: number
+    steals: number
+    blocks: number
+  }
+  // 2026 production projects materially above value basis — surfaces
+  // breakout candidates whose role/usage has changed (Sabally, Carleton,
+  // etc.) before they cross the 10-GP cutover.
+  is_hot: boolean
   z_scores: {
     points: number
     rebounds: number
@@ -229,6 +259,29 @@ export type StandingsResponse = {
 
 export const fetchStandings = (season = 2026) =>
   apiFetch<StandingsResponse>(`/api/standings?season=${season}`)
+
+// ---- Trends (per-day league snapshots for chart view) ----
+
+export type TrendsTeamDay = {
+  standing: number
+  rank_sum: number
+  cats: Record<Cat, number>
+}
+
+export type TrendsDay = {
+  date: string            // ISO YYYY-MM-DD
+  teams: Record<string, TrendsTeamDay>   // team_id (string) -> day snapshot
+}
+
+export type TrendsResponse = {
+  season: number
+  computed_at: string
+  team_names: Record<string, string>     // team_id (string) -> team name
+  days: TrendsDay[]
+}
+
+export const fetchTrends = (season = 2026) =>
+  apiFetch<TrendsResponse>(`/api/trends?season=${season}`)
 
 // ---- Transactions (CP9) ----
 

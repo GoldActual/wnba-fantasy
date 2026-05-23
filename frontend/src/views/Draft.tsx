@@ -8,11 +8,12 @@ import {
   undoLastPick,
   type DraftState,
   type Player,
-  type RosterEntry,
   type Slot,
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { SyncButton } from '../components/SyncButton'
+import { AuthChip } from '../components/AuthChip'
+import { AdminAuthError, promptSignIn, useAdmin } from '../auth'
 
 type DraftProps = {
   onReset: () => void
@@ -21,6 +22,7 @@ type DraftProps = {
   onSwitchToPlayers?: () => void
   onSwitchToSimulator?: () => void
   onSwitchToStrategy?: () => void
+  onSwitchToTrends?: () => void
 }
 
 type Cats = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
@@ -191,7 +193,9 @@ export function Draft({
   onSwitchToPlayers,
   onSwitchToSimulator,
   onSwitchToStrategy,
+  onSwitchToTrends,
 }: DraftProps) {
+  const { signedIn } = useAdmin()
   const [state, setState] = useState<DraftState | null>(null)
   const [players, setPlayers] = useState<Player[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -310,6 +314,10 @@ export function Draft({
   const onClickPlayer = (p: Player) => {
     if (!state || !state.on_the_clock) return
     if (p.drafted_by_team_id != null) return // already gone
+    if (!signedIn) {
+      promptSignIn('Sign in as admin to draft players.')
+      return
+    }
     setPickPrompt(p)
   }
 
@@ -324,7 +332,11 @@ export function Draft({
       setPlayers(p.players)
       setPickPrompt(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in as admin to make picks.')
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
       setBusy(false)
     }
@@ -340,7 +352,11 @@ export function Draft({
       const p = await fetchPlayers(myT ? { for_team_id: myT.id } : {})
       setPlayers(p.players)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in as admin to undo picks.')
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
       setBusy(false)
     }
@@ -355,7 +371,11 @@ export function Draft({
       setResetPrompt(false)
       onReset()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in as admin to reset the draft.')
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
       setBusy(false)
     }
   }
@@ -395,13 +415,15 @@ export function Draft({
             <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Draft complete</span>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={onUndo}
-              disabled={busy || state.picks_made === 0}
-              className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
-            >
-              Undo
-            </button>
+            {signedIn && (
+              <button
+                onClick={onUndo}
+                disabled={busy || state.picks_made === 0}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+              >
+                Undo
+              </button>
+            )}
             <a
               href={draftCsvUrl}
               className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -440,6 +462,14 @@ export function Draft({
                 Strategy
               </button>
             )}
+            {onSwitchToTrends && (
+              <button
+                onClick={onSwitchToTrends}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Trends
+              </button>
+            )}
             {onSwitchToSimulator && (
               <button
                 onClick={onSwitchToSimulator}
@@ -448,14 +478,17 @@ export function Draft({
                 Simulator
               </button>
             )}
-            <button
-              onClick={() => setResetPrompt(true)}
-              disabled={busy}
-              className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-300 dark:hover:bg-red-950/40 dark:hover:border-red-900 disabled:opacity-50"
-            >
-              Reset
-            </button>
+            {signedIn && (
+              <button
+                onClick={() => setResetPrompt(true)}
+                disabled={busy}
+                className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-red-50 hover:border-red-300 dark:hover:bg-red-950/40 dark:hover:border-red-900 disabled:opacity-50"
+              >
+                Reset
+              </button>
+            )}
             <SyncButton onSyncComplete={() => void refresh()} />
+            <AuthChip />
             <ThemeToggle />
           </div>
         </div>

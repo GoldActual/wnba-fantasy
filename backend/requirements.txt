@@ -3,3 +3,4 @@ uvicorn[standard]>=0.32
 sqlalchemy>=2.0
 requests>=2.32
 beautifulsoup4>=4.12
+apscheduler>=3.10

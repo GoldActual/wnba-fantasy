@@ -1,0 +1,24 @@
+[Unit]
+Description=WNBA Fantasy Tracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cole
+Group=cole
+WorkingDirectory=/home/cole/wnba-fantasy/backend
+EnvironmentFile=/home/cole/wnba-fantasy/.env
+ExecStart=/home/cole/wnba-fantasy/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+# Light hardening — keeps the DB writable, blocks the obvious footguns.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/cole/wnba-fantasy/backend/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

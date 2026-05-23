@@ -7,6 +7,7 @@ import {
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { SyncButton } from '../components/SyncButton'
+import { AuthChip } from '../components/AuthChip'
 
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
 const CAT_LABEL: Record<Cat, string> = {
@@ -135,6 +136,7 @@ type ScoreboardProps = {
   onSwitchToPlayers: () => void
   onSwitchToSimulator: () => void
   onSwitchToStrategy: () => void
+  onSwitchToTrends: () => void
 }
 
 export function Scoreboard({
@@ -143,6 +145,7 @@ export function Scoreboard({
   onSwitchToPlayers,
   onSwitchToSimulator,
   onSwitchToStrategy,
+  onSwitchToTrends,
 }: ScoreboardProps) {
   const [data, setData] = useState<StandingsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -211,6 +214,13 @@ export function Scoreboard({
             </button>
             <button
               type="button"
+              onClick={onSwitchToTrends}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Trends
+            </button>
+            <button
+              type="button"
               onClick={onSwitchToSimulator}
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
@@ -231,6 +241,7 @@ export function Scoreboard({
               Draft board
             </button>
             <SyncButton onSyncComplete={() => void refresh()} />
+            <AuthChip />
             <ThemeToggle />
           </div>
         </div>

@@ -6,11 +6,11 @@ import {
   type Cat,
   type DraftState,
   type Player,
-  type SimTeam,
   type SimulatorResponse,
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { SyncButton } from '../components/SyncButton'
+import { AuthChip } from '../components/AuthChip'
 
 // CP11 — drop-rostered + add-FA simulator. Attribution model is
 // all-season retroactive: the simulator pretends the swap was in place
@@ -27,6 +27,7 @@ type Props = {
   onSwitchToTransactions: () => void
   onSwitchToPlayers: () => void
   onSwitchToStrategy: () => void
+  onSwitchToTrends: () => void
 }
 
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
@@ -65,6 +66,7 @@ export function Simulator({
   onSwitchToTransactions,
   onSwitchToPlayers,
   onSwitchToStrategy,
+  onSwitchToTrends,
 }: Props) {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [allPlayers, setAllPlayers] = useState<Player[] | null>(null)
@@ -196,6 +198,12 @@ export function Simulator({
               Strategy
             </button>
             <button
+              onClick={onSwitchToTrends}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Trends
+            </button>
+            <button
               onClick={onSwitchToTransactions}
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
@@ -208,6 +216,7 @@ export function Simulator({
               Draft board
             </button>
             <SyncButton onSyncComplete={() => void refresh()} />
+            <AuthChip />
             <ThemeToggle />
           </div>
         </div>

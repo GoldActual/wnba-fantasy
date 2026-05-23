@@ -15,6 +15,8 @@ import {
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { SyncButton } from '../components/SyncButton'
+import { AuthChip } from '../components/AuthChip'
+import { AdminAuthError, promptSignIn, useAdmin } from '../auth'
 
 // League rule (memory: project_league_no_team_trades): every transaction is
 // 1-for-1, drop one rostered player + add one currently-unrostered player.
@@ -29,6 +31,7 @@ type Props = {
   onSwitchToPlayers: () => void
   onSwitchToSimulator: () => void
   onSwitchToStrategy: () => void
+  onSwitchToTrends: () => void
 }
 
 function todayIso(): string {
@@ -308,10 +311,12 @@ function EventRow({
   ev,
   onUndo,
   busy,
+  canUndo,
 }: {
   ev: TxnEvent
   onUndo: (id: string) => void
   busy: boolean
+  canUndo: boolean
 }) {
   // Render as a one-line summary derived from the legs.
   let summary: string
@@ -347,14 +352,16 @@ function EventRow({
           </span>
         )}
       </span>
-      <button
-        type="button"
-        onClick={() => onUndo(ev.event_id)}
-        disabled={busy}
-        className="text-xs rounded border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-red-50 hover:border-red-300 dark:hover:bg-red-950/40 dark:hover:border-red-900 disabled:opacity-50"
-      >
-        Undo
-      </button>
+      {canUndo && (
+        <button
+          type="button"
+          onClick={() => onUndo(ev.event_id)}
+          disabled={busy}
+          className="text-xs rounded border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-red-50 hover:border-red-300 dark:hover:bg-red-950/40 dark:hover:border-red-900 disabled:opacity-50"
+        >
+          Undo
+        </button>
+      )}
     </li>
   )
 }
@@ -365,7 +372,9 @@ export function Transactions({
   onSwitchToPlayers,
   onSwitchToSimulator,
   onSwitchToStrategy,
+  onSwitchToTrends,
 }: Props) {
+  const { signedIn } = useAdmin()
   const [data, setData] = useState<TransactionsResponse | null>(null)
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [allPlayers, setAllPlayers] = useState<Player[] | null>(null)
@@ -423,7 +432,11 @@ export function Transactions({
       setFormOpen(false)
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in as admin to record transactions.')
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
       setBusy(false)
     }
@@ -437,7 +450,11 @@ export function Transactions({
       await undoTransaction(eventId)
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminAuthError) {
+        promptSignIn('Sign in as admin to undo transactions.')
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
       setBusy(false)
     }
@@ -473,6 +490,12 @@ export function Transactions({
               Strategy
             </button>
             <button
+              onClick={onSwitchToTrends}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Trends
+            </button>
+            <button
               onClick={onSwitchToSimulator}
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
@@ -485,6 +508,7 @@ export function Transactions({
               Draft board
             </button>
             <SyncButton onSyncComplete={() => void refresh()} />
+            <AuthChip />
             <ThemeToggle />
           </div>
         </div>
@@ -499,16 +523,22 @@ export function Transactions({
 
         {data && <UsagePanel data={data} />}
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setFormOpen(true)}
-            disabled={busy || formOpen}
-            className="rounded-md bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-          >
-            + Trade
-          </button>
-        </div>
+        {signedIn ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setFormOpen(true)}
+              disabled={busy || formOpen}
+              className="rounded-md bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            >
+              + Trade
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500 dark:text-slate-400 italic">
+            Sign in as admin to record or undo transactions.
+          </p>
+        )}
 
         {formOpen && draftState && (
           <PickupForm
@@ -532,7 +562,7 @@ export function Transactions({
           )}
           <ul>
             {data?.events.map((ev) => (
-              <EventRow key={ev.event_id} ev={ev} onUndo={onUndo} busy={busy} />
+              <EventRow key={ev.event_id} ev={ev} onUndo={onUndo} busy={busy} canUndo={signedIn} />
             ))}
           </ul>
         </div>

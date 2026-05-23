@@ -135,6 +135,51 @@ def _aggregate_current_season_basis(db: Session) -> dict[int, StatsSeason]:
     return out
 
 
+# HOT marker: flag FAs whose 2026 production projects materially above their
+# value basis. Threshold is an absolute lift in summed-z raw_value (i.e., the
+# 2026 line, projected to a full season, would z-score ≥ HOT_RAW_LIFT higher
+# than the basis row). Tunable here without touching the API.
+HOT_MIN_GAMES = 3
+# Raw-value lift threshold: sum-of-z difference between 2026 projection and
+# basis. ~+4.0 sigma across 5 cats keeps the list short enough to be a
+# "who's crushing" highlight (~30 players league-wide rather than ~60) but
+# still catches role-change breakouts like Sabally, Stokes, Carleton, who
+# are running a clear tier above their 2025 baseline.
+HOT_RAW_LIFT = 4.0
+HOT_PROJECT_GAMES = 44  # WNBA 2026 regular season length
+
+
+def _project_2026_full_season(db: Session) -> dict[int, StatsSeason]:
+    """Like `_aggregate_current_season_basis` but with a lower GP floor — used
+    only for the HOT marker, not value scoring. Each player's 2026 per-game
+    rates are scaled to HOT_PROJECT_GAMES so they're comparable to a full-
+    season basis row."""
+    rows = list(db.scalars(select(GameStats).where(GameStats.season == CURRENT_SEASON)).all())
+    by_player: dict[int, list[GameStats]] = {}
+    for g in rows:
+        by_player.setdefault(g.player_id, []).append(g)
+
+    out: dict[int, StatsSeason] = {}
+    for pid, games in by_player.items():
+        gp = len(games)
+        if gp < HOT_MIN_GAMES:
+            continue
+        scale = HOT_PROJECT_GAMES / gp
+        out[pid] = StatsSeason(
+            player_id=pid,
+            season=CURRENT_SEASON,
+            source="wnba_actual",
+            games_played=HOT_PROJECT_GAMES,
+            minutes=sum(g.minutes for g in games) * scale,
+            points=int(sum(g.points for g in games) * scale),
+            rebounds=int(sum(g.rebounds for g in games) * scale),
+            assists=int(sum(g.assists for g in games) * scale),
+            steals=int(sum(g.steals for g in games) * scale),
+            blocks=int(sum(g.blocks for g in games) * scale),
+        )
+    return out
+
+
 def _basis_stats_by_player(db: Session) -> dict[int, StatsSeason]:
     """For each player, pick the StatsSeason row used as their value basis.
 
@@ -279,6 +324,49 @@ def compute_player_values(db: Session) -> list[PlayerValue]:
 
     out.sort(key=lambda v: v.value, reverse=True)
     return out
+
+
+def compute_hot_player_ids(db: Session) -> set[int]:
+    """Return the set of player_ids whose 2026 production, projected to a
+    full season, would z-score noticeably above their value basis. Used by
+    the Players API to surface "who's crushing" without changing the value
+    ordering (which still uses the conservative basis logic).
+
+    Math:
+      - For each player with >= HOT_MIN_GAMES 2026 games, scale their
+        per-game line to a 44-game season.
+      - Z-score the projected line against the SAME baseline used by the
+        basis row (so the comparison is apples-to-apples).
+      - HOT if sum-of-z (projected) - sum-of-z (basis) >= HOT_RAW_LIFT.
+      - Players already on a 2026 basis (>=10 GP) only flag HOT if their
+        projection still beats their own basis by HOT_RAW_LIFT — i.e., a
+        within-2026 surge above what's already baked in. Usually they
+        won't (basis ~= projection by construction), which is the right
+        behavior: their value already reflects the hot start.
+    """
+    basis = _basis_stats_by_player(db)
+    if not basis:
+        return set()
+    projections = _project_2026_full_season(db)
+    if not projections:
+        return set()
+
+    mu_sigma = _compute_zscore_baseline(list(basis.values()))
+
+    def raw_value(row: StatsSeason) -> float:
+        return sum(
+            (getattr(row, cat) - mu_sigma[cat][0]) / mu_sigma[cat][1]
+            for cat in CATS
+        )
+
+    hot: set[int] = set()
+    for pid, proj in projections.items():
+        basis_row = basis.get(pid)
+        if basis_row is None:
+            continue
+        if raw_value(proj) - raw_value(basis_row) >= HOT_RAW_LIFT:
+            hot.add(pid)
+    return hot
 
 
 # ----- team-context-aware (rotis) value -----

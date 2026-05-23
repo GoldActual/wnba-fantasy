@@ -7,6 +7,7 @@ import { Transactions } from './views/Transactions'
 import { Players } from './views/Players'
 import { Simulator } from './views/Simulator'
 import { Strategy } from './views/Strategy'
+import { Trends } from './views/Trends'
 
 type Mode =
   | 'loading'
@@ -17,6 +18,7 @@ type Mode =
   | 'players'
   | 'simulator'
   | 'strategy'
+  | 'trends'
 
 function App() {
   const [mode, setMode] = useState<Mode>('loading')
@@ -38,7 +40,8 @@ function App() {
           cur === 'transactions' ||
           cur === 'players' ||
           cur === 'simulator' ||
-          cur === 'strategy'
+          cur === 'strategy' ||
+          cur === 'trends'
             ? cur
             : 'scoreboard',
         )
@@ -86,6 +89,7 @@ function App() {
         onSwitchToPlayers={() => setMode('players')}
         onSwitchToSimulator={() => setMode('simulator')}
         onSwitchToStrategy={() => setMode('strategy')}
+        onSwitchToTrends={() => setMode('trends')}
       />
     )
   }
@@ -98,6 +102,7 @@ function App() {
         onSwitchToPlayers={() => setMode('players')}
         onSwitchToSimulator={() => setMode('simulator')}
         onSwitchToStrategy={() => setMode('strategy')}
+        onSwitchToTrends={() => setMode('trends')}
       />
     )
   }
@@ -110,6 +115,7 @@ function App() {
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToSimulator={() => setMode('simulator')}
         onSwitchToStrategy={() => setMode('strategy')}
+        onSwitchToTrends={() => setMode('trends')}
       />
     )
   }
@@ -122,6 +128,7 @@ function App() {
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToPlayers={() => setMode('players')}
         onSwitchToStrategy={() => setMode('strategy')}
+        onSwitchToTrends={() => setMode('trends')}
       />
     )
   }
@@ -134,6 +141,20 @@ function App() {
         onSwitchToTransactions={() => setMode('transactions')}
         onSwitchToPlayers={() => setMode('players')}
         onSwitchToSimulator={() => setMode('simulator')}
+        onSwitchToTrends={() => setMode('trends')}
+      />
+    )
+  }
+
+  if (mode === 'trends') {
+    return (
+      <Trends
+        onSwitchToScoreboard={() => setMode('scoreboard')}
+        onSwitchToDraft={() => setMode('draft')}
+        onSwitchToTransactions={() => setMode('transactions')}
+        onSwitchToPlayers={() => setMode('players')}
+        onSwitchToSimulator={() => setMode('simulator')}
+        onSwitchToStrategy={() => setMode('strategy')}
       />
     )
   }
@@ -146,6 +167,7 @@ function App() {
       onSwitchToPlayers={() => setMode('players')}
       onSwitchToSimulator={() => setMode('simulator')}
       onSwitchToStrategy={() => setMode('strategy')}
+      onSwitchToTrends={() => setMode('trends')}
     />
   )
 }

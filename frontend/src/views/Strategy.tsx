@@ -9,6 +9,7 @@ import {
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { SyncButton } from '../components/SyncButton'
+import { AuthChip } from '../components/AuthChip'
 
 // CP13 — cat-targeting strategy. Classifies each cat as Lock / Contend /
 // Punt and surfaces head-to-head deltas vs every other team. The point
@@ -22,9 +23,9 @@ type Props = {
   onSwitchToTransactions: () => void
   onSwitchToPlayers: () => void
   onSwitchToSimulator: () => void
+  onSwitchToTrends: () => void
 }
 
-const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
 const CAT_LABEL: Record<Cat, string> = {
   points: 'PTS',
   rebounds: 'REB',
@@ -78,6 +79,7 @@ export function Strategy({
   onSwitchToTransactions,
   onSwitchToPlayers,
   onSwitchToSimulator,
+  onSwitchToTrends,
 }: Props) {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [data, setData] = useState<StrategyResponse | null>(null)
@@ -163,6 +165,12 @@ export function Strategy({
               Players
             </button>
             <button
+              onClick={onSwitchToTrends}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Trends
+            </button>
+            <button
               onClick={onSwitchToSimulator}
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
@@ -181,6 +189,7 @@ export function Strategy({
               Draft board
             </button>
             <SyncButton onSyncComplete={() => void refresh()} />
+            <AuthChip />
             <ThemeToggle />
           </div>
         </div>

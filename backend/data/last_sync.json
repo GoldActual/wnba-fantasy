@@ -1,21 +1,21 @@
 {
-  "last_completed_at": "2026-05-14T14:47:22+00:00",
+  "last_completed_at": "2026-05-22T22:31:28+00:00",
   "last_summary": {
     "season": 2026,
     "injuries": {
-      "fetched": 10,
-      "inserted": 4,
-      "updated": 6,
+      "fetched": 8,
+      "inserted": 0,
+      "updated": 8,
       "unlinked": 0,
-      "deleted_stale": 1
+      "deleted_stale": 0
     },
     "gamelogs": {
       "players": 187,
-      "games_scraped": 324,
-      "inserted": 72,
-      "updated": 252,
-      "empty_players": 40,
-      "errors": 0
+      "games_scraped": 0,
+      "inserted": 0,
+      "updated": 0,
+      "empty_players": 0,
+      "errors": 187
     }
   },
   "last_error": null

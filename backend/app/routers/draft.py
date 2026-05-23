@@ -16,6 +16,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from starlette.responses import Response
 
+from app.auth import require_admin
 from app.db import get_db
 from app.models import Player, Roster, Team, Transaction
 from app.value import (
@@ -160,7 +161,7 @@ def list_teams(db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.post("/teams/setup")
+@router.post("/teams/setup", dependencies=[Depends(require_admin)])
 def setup_teams(req: TeamSetupRequest, db: Session = Depends(get_db)) -> dict:
     """Wipe-and-replace draft state. Destructive: deletes all teams,
     rosters, and draft transactions. Pass `force=true` if any picks have
@@ -188,7 +189,7 @@ def setup_teams(req: TeamSetupRequest, db: Session = Depends(get_db)) -> dict:
     return list_teams(db)
 
 
-@router.delete("/teams")
+@router.delete("/teams", dependencies=[Depends(require_admin)])
 def reset_teams(force: bool = False, db: Session = Depends(get_db)) -> dict:
     """Equivalent to setup-with-empty: blow away teams + rosters + draft
     transactions. Frontend uses this when the user hits 'Reset draft'.
@@ -270,7 +271,7 @@ def draft_state(db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.post("/draft/pick")
+@router.post("/draft/pick", dependencies=[Depends(require_admin)])
 def make_pick(req: PickRequest, db: Session = Depends(get_db)) -> dict:
     teams = _active_teams(db)
     if not teams:
@@ -340,7 +341,7 @@ def make_pick(req: PickRequest, db: Session = Depends(get_db)) -> dict:
     return draft_state(db)
 
 
-@router.delete("/draft/pick/last")
+@router.delete("/draft/pick/last", dependencies=[Depends(require_admin)])
 def undo_last_pick(db: Session = Depends(get_db)) -> dict:
     last = db.scalar(
         select(Roster).order_by(Roster.drafted_overall_pick.desc()).limit(1)

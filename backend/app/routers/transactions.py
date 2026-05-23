@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin
 from app.db import get_db
 from app.models import Player, Team, Transaction
 from app.transactions import (
@@ -136,7 +137,7 @@ def list_transactions(db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.post("/transactions/pickup", status_code=201)
+@router.post("/transactions/pickup", status_code=201, dependencies=[Depends(require_admin)])
 def post_pickup(req: PickupRequest, db: Session = Depends(get_db)) -> dict:
     try:
         event_id = record_pickup(
@@ -154,7 +155,7 @@ def post_pickup(req: PickupRequest, db: Session = Depends(get_db)) -> dict:
     return {"event_id": event_id}
 
 
-@router.post("/transactions/trade", status_code=201)
+@router.post("/transactions/trade", status_code=201, dependencies=[Depends(require_admin)])
 def post_trade(req: TradeRequest, db: Session = Depends(get_db)) -> dict:
     try:
         event_id = record_trade(
@@ -173,7 +174,7 @@ def post_trade(req: TradeRequest, db: Session = Depends(get_db)) -> dict:
     return {"event_id": event_id}
 
 
-@router.delete("/transactions/{event_id}")
+@router.delete("/transactions/{event_id}", dependencies=[Depends(require_admin)])
 def undo_event(event_id: str, db: Session = Depends(get_db)) -> dict:
     try:
         deleted = delete_event(db, event_id)

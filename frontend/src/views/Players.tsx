@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchDraftState, fetchPlayers, type DraftState, type Player } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { SyncButton } from '../components/SyncButton'
+import { AuthChip } from '../components/AuthChip'
 
 type Cat = 'points' | 'rebounds' | 'assists' | 'steals' | 'blocks'
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
@@ -15,12 +16,37 @@ const CAT_LABEL: Record<Cat, string> = {
 
 type Mode = 'fa' | 'roster'
 
+// Sortable column identifiers. 'basis_<cat>' / 'season_<cat>' map to the
+// two stat-column groups; 'gp_basis' / 'gp_season' are their GP columns.
+type SortKey =
+  | 'value'
+  | 'weighted'
+  | 'gp_basis'
+  | 'gp_season'
+  | `basis_${Cat}`
+  | `season_${Cat}`
+type SortDir = 'asc' | 'desc'
+
+function sortValue(p: Player, key: SortKey): number {
+  switch (key) {
+    case 'value': return p.value
+    case 'weighted': return p.strategy_weighted_value ?? p.value
+    case 'gp_basis': return p.totals.games_played
+    case 'gp_season': return p.season_totals.games_played
+    default: {
+      const [group, cat] = key.split('_') as ['basis' | 'season', Cat]
+      return group === 'basis' ? p.totals[cat] : p.season_totals[cat]
+    }
+  }
+}
+
 type Props = {
   onSwitchToScoreboard: () => void
   onSwitchToDraft: () => void
   onSwitchToTransactions: () => void
   onSwitchToSimulator: () => void
   onSwitchToStrategy: () => void
+  onSwitchToTrends: () => void
 }
 
 function injuryBadge(status: string | null): { dot: string; tone: string } {
@@ -36,6 +62,7 @@ export function Players({
   onSwitchToTransactions,
   onSwitchToSimulator,
   onSwitchToStrategy,
+  onSwitchToTrends,
 }: Props) {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [allPlayers, setAllPlayers] = useState<Player[] | null>(null)
@@ -52,6 +79,10 @@ export function Players({
   // once classifications are meaningful (low-sample mode early-season).
   const [applyStrategy, setApplyStrategy] = useState(false)
   const [strategyWeights, setStrategyWeights] = useState<Record<string, number> | null>(null)
+  // Sort override. When null, falls back to the default (value/weighted —
+  // desc in FA mode, asc in roster mode for drop-candidate ordering).
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const refresh = async () => {
     setBusy(true)
@@ -103,22 +134,52 @@ export function Players({
         return !s.includes('out')
       })
     }
-    // FA mode: best at top. Roster mode: weakest at top (drop candidate).
-    // When strategy is applied, sort by the weighted value so the ordering
-    // reflects the cat weights (backend already sorts this way, but the
-    // filtered list may re-shuffle ties).
+    // If the user has clicked a column header, honor that. Otherwise fall
+    // back to the default: FA = best at top, roster = weakest at top (drop
+    // candidate). Strategy mode swaps in weighted value as the default.
+    if (sortKey !== null) {
+      const dirMul = sortDir === 'asc' ? 1 : -1
+      list = [...list].sort((a, b) => (sortValue(a, sortKey) - sortValue(b, sortKey)) * dirMul)
+    } else {
+      const score = (p: Player) =>
+        applyStrategy && p.strategy_weighted_value !== null
+          ? p.strategy_weighted_value
+          : p.value
+      list = [...list].sort((a, b) =>
+        mode === 'roster' ? score(a) - score(b) : score(b) - score(a),
+      )
+    }
+    return list
+  }, [allPlayers, mode, teamId, search, positionFilter, hideInjured, applyStrategy, sortKey, sortDir])
+
+  function onSortClick(key: SortKey): void {
+    if (sortKey === key) {
+      // Same column: toggle direction, or clear back to default after asc.
+      if (sortDir === 'desc') setSortDir('asc')
+      else setSortKey(null)
+    } else {
+      setSortKey(key)
+      // GP/cat columns are most-useful descending; toggle from there.
+      setSortDir('desc')
+    }
+  }
+
+  function sortArrow(key: SortKey): string {
+    if (sortKey !== key) return ''
+    return sortDir === 'desc' ? ' ↓' : ' ↑'
+  }
+
+  // Drop candidate = lowest value player on the roster, regardless of how
+  // the table is currently sorted. Pre-sort change, this was just
+  // `filtered[0]`, which broke when the user sorted by PTS desc etc.
+  const dropCandidateId = useMemo(() => {
+    if (mode !== 'roster' || filtered.length === 0) return null
     const score = (p: Player) =>
       applyStrategy && p.strategy_weighted_value !== null
         ? p.strategy_weighted_value
         : p.value
-    list = [...list].sort((a, b) =>
-      mode === 'roster' ? score(a) - score(b) : score(b) - score(a),
-    )
-    return list
-  }, [allPlayers, mode, teamId, search, positionFilter, hideInjured, applyStrategy])
-
-  const dropCandidateId =
-    mode === 'roster' && filtered.length > 0 ? filtered[0].player_id : null
+    return [...filtered].sort((a, b) => score(a) - score(b))[0].player_id
+  }, [filtered, mode, applyStrategy])
 
   return (
     <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -128,7 +189,7 @@ export function Players({
             Players
           </h1>
           <span className="text-sm text-slate-500 dark:text-slate-400">
-            Free agents and roster health · value uses 2026 actuals once a player has 10+ games, prior year before that
+            Free agents and roster health · Basis = stats driving value (2026 if 10+ GP, else 2025) · 2026 columns show season-to-date actuals
           </span>
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -142,6 +203,12 @@ export function Players({
               className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Strategy
+            </button>
+            <button
+              onClick={onSwitchToTrends}
+              className="text-sm rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Trends
             </button>
             <button
               onClick={onSwitchToSimulator}
@@ -162,6 +229,7 @@ export function Players({
               Draft board
             </button>
             <SyncButton onSyncComplete={() => void refresh()} />
+            <AuthChip />
             <ThemeToggle />
           </div>
         </div>
@@ -288,14 +356,27 @@ export function Players({
             </span>
           </p>
         )}
-        {mode === 'roster' && filtered.length > 0 && (
+        {sortKey === null && mode === 'roster' && filtered.length > 0 && (
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Sorted by {applyStrategy ? 'weighted ' : ''}value (lowest first) — top row is the current drop candidate.
+            Sorted by {applyStrategy ? 'weighted ' : ''}value (lowest first) — top row is the current drop candidate. Click any column to re-sort.
           </p>
         )}
-        {mode === 'fa' && (
+        {sortKey === null && mode === 'fa' && (
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Sorted by {applyStrategy ? 'weighted ' : ''}value (best first) — top of the list is the strongest available pickup.
+            Sorted by {applyStrategy ? 'weighted ' : ''}value (best first) — 🔥 flags players whose 2026 production projects above their basis. Click any column to re-sort.
+          </p>
+        )}
+        {sortKey !== null && (
+          <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-2">
+            <span>
+              Custom sort active ({sortKey} {sortDir}). Drop candidate (lowest value) still highlighted in red.
+            </span>
+            <button
+              onClick={() => setSortKey(null)}
+              className="text-xs rounded border border-slate-300 dark:border-slate-700 px-2 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              clear sort
+            </button>
           </p>
         )}
 
@@ -303,6 +384,28 @@ export function Players({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300">
+                <tr className="text-left text-[11px] uppercase tracking-wide">
+                  <th className="px-3 pt-2 pb-0 w-12" />
+                  <th className="px-3 pt-2 pb-0" />
+                  <th className="px-3 pt-2 pb-0 w-16" />
+                  <th className="px-3 pt-2 pb-0 w-16" />
+                  {applyStrategy && <th className="px-3 pt-2 pb-0 w-20" />}
+                  <th className="px-3 pt-2 pb-0 w-16" />
+                  <th
+                    colSpan={CATS.length + 1}
+                    className="px-3 pt-2 pb-0 text-right text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-800"
+                    title="Stats driving the value column. 2026 actuals once a player has 10+ GP, else most recent prior wnba_actual season (usually 2025)."
+                  >
+                    Basis (drives value)
+                  </th>
+                  <th
+                    colSpan={CATS.length + 1}
+                    className="px-3 pt-2 pb-0 text-right text-emerald-700 dark:text-emerald-300 border-l border-slate-200 dark:border-slate-800"
+                    title="2026 season-to-date totals from game_stats. 0 if the player hasn't appeared yet."
+                  >
+                    2026 season-to-date
+                  </th>
+                </tr>
                 <tr className="text-left">
                   <th className="px-3 py-2 w-12 text-right">#</th>
                   <th className="px-3 py-2">Player</th>
@@ -310,17 +413,52 @@ export function Players({
                   <th className="px-3 py-2 w-16">Team</th>
                   {applyStrategy && (
                     <th
-                      className="px-3 py-2 w-20 text-right"
-                      title="Strategy-weighted value: z-scores reweighted by Lock/Contend/Punt classifications before applying availability/position/injury/rookie factors."
+                      onClick={() => onSortClick('weighted')}
+                      className="px-3 py-2 w-20 text-right cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                      title="Strategy-weighted value: z-scores reweighted by Lock/Contend/Punt classifications before applying availability/position/injury/rookie factors. Click to sort."
                     >
-                      Weighted
+                      Weighted{sortArrow('weighted')}
                     </th>
                   )}
-                  <th className="px-3 py-2 w-16 text-right">Value</th>
-                  <th className="px-3 py-2 w-12 text-right">GP</th>
+                  <th
+                    onClick={() => onSortClick('value')}
+                    className="px-3 py-2 w-16 text-right cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                    title="Click to sort by value"
+                  >
+                    Value{sortArrow('value')}
+                  </th>
+                  <th
+                    onClick={() => onSortClick('gp_basis')}
+                    className="px-3 py-2 w-12 text-right border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                    title="Basis GP. Click to sort."
+                  >
+                    GP{sortArrow('gp_basis')}
+                  </th>
                   {CATS.map((c) => (
-                    <th key={c} className="px-3 py-2 w-16 text-right">
-                      {CAT_LABEL[c]}
+                    <th
+                      key={`basis-${c}`}
+                      onClick={() => onSortClick(`basis_${c}` as SortKey)}
+                      className="px-3 py-2 w-16 text-right cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                      title={`Basis ${CAT_LABEL[c]}. Click to sort.`}
+                    >
+                      {CAT_LABEL[c]}{sortArrow(`basis_${c}` as SortKey)}
+                    </th>
+                  ))}
+                  <th
+                    onClick={() => onSortClick('gp_season')}
+                    className="px-3 py-2 w-12 text-right border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                    title="2026 GP. Click to sort."
+                  >
+                    GP{sortArrow('gp_season')}
+                  </th>
+                  {CATS.map((c) => (
+                    <th
+                      key={`season-${c}`}
+                      onClick={() => onSortClick(`season_${c}` as SortKey)}
+                      className="px-3 py-2 w-16 text-right cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                      title={`2026 ${CAT_LABEL[c]}. Click to sort.`}
+                    >
+                      {CAT_LABEL[c]}{sortArrow(`season_${c}` as SortKey)}
                     </th>
                   ))}
                 </tr>
@@ -349,6 +487,14 @@ export function Players({
                         {p.is_rookie && (
                           <span className="mr-1" title="Rookie — projected stats">🆕</span>
                         )}
+                        {p.is_hot && (
+                          <span
+                            className="mr-1"
+                            title="HOT — 2026 production projects materially above this player's value basis (role change or breakout). Look closer."
+                          >
+                            🔥
+                          </span>
+                        )}
                         {p.name}
                         {flagged && (
                           <span className="ml-2 text-xs rounded bg-red-200 text-red-900 dark:bg-red-900/60 dark:text-red-200 px-1.5 py-0.5">
@@ -375,12 +521,35 @@ export function Players({
                       >
                         {p.value.toFixed(2)}
                       </td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">
+                      <td className="px-3 py-1.5 text-right tabular-nums border-l border-slate-100 dark:border-slate-800">
                         {p.totals.games_played}
                       </td>
                       {CATS.map((c) => (
-                        <td key={c} className="px-3 py-1.5 text-right tabular-nums">
+                        <td key={`basis-${c}`} className="px-3 py-1.5 text-right tabular-nums">
                           {p.totals[c]}
+                        </td>
+                      ))}
+                      <td
+                        className={
+                          'px-3 py-1.5 text-right tabular-nums border-l border-slate-100 dark:border-slate-800 ' +
+                          (p.season_totals.games_played === 0
+                            ? 'text-slate-400 dark:text-slate-600'
+                            : '')
+                        }
+                      >
+                        {p.season_totals.games_played}
+                      </td>
+                      {CATS.map((c) => (
+                        <td
+                          key={`season-${c}`}
+                          className={
+                            'px-3 py-1.5 text-right tabular-nums ' +
+                            (p.season_totals.games_played === 0
+                              ? 'text-slate-400 dark:text-slate-600'
+                              : '')
+                          }
+                        >
+                          {p.season_totals.games_played === 0 ? '—' : p.season_totals[c]}
                         </td>
                       ))}
                     </tr>
@@ -389,7 +558,7 @@ export function Players({
                 {filtered.length === 0 && (
                   <tr>
                     <td
-                      colSpan={(applyStrategy ? 7 : 6) + CATS.length}
+                      colSpan={(applyStrategy ? 8 : 7) + CATS.length * 2}
                       className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
                     >
                       No players match the current filters.

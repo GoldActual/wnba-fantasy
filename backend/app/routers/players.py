@@ -14,17 +14,19 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Roster, Team
+from app.models import GameStats, Roster, Team
 from app.strategy import analyze_team
 from app.value import (
     CATS,
+    CURRENT_SEASON,
     PICKS_PER_TEAM,
     PlayerValue,
     aggregate_team_totals,
+    compute_hot_player_ids,
     compute_marginal_value,
     compute_pace_targets,
     compute_player_values,
@@ -34,9 +36,48 @@ from app.value import (
 router = APIRouter()
 
 
+_EMPTY_SEASON_TOTALS = {
+    "games_played": 0, "points": 0, "rebounds": 0,
+    "assists": 0, "steals": 0, "blocks": 0,
+}
+
+
+def _current_season_totals(db: Session) -> dict[int, dict[str, int]]:
+    """Sum 2026 game_stats per player so the API can return live-season
+    totals alongside the value-basis totals (which may still be 2025 for
+    players below the 10-GP cutover). Players with 0 games omitted; the
+    serializer fills them with zeros."""
+    rows = db.execute(
+        select(
+            GameStats.player_id,
+            func.count(GameStats.id).label("gp"),
+            func.coalesce(func.sum(GameStats.points), 0).label("pts"),
+            func.coalesce(func.sum(GameStats.rebounds), 0).label("reb"),
+            func.coalesce(func.sum(GameStats.assists), 0).label("ast"),
+            func.coalesce(func.sum(GameStats.steals), 0).label("stl"),
+            func.coalesce(func.sum(GameStats.blocks), 0).label("blk"),
+        )
+        .where(GameStats.season == CURRENT_SEASON)
+        .group_by(GameStats.player_id)
+    ).all()
+    return {
+        r.player_id: {
+            "games_played": int(r.gp),
+            "points": int(r.pts),
+            "rebounds": int(r.reb),
+            "assists": int(r.ast),
+            "steals": int(r.stl),
+            "blocks": int(r.blk),
+        }
+        for r in rows
+    }
+
+
 def _serialize(
     v: PlayerValue,
     drafted_by: dict[int, int],
+    season_totals_by_pid: dict[int, dict[str, int]],
+    hot_pids: set[int],
     marginal_by_pid: dict[int, float] | None = None,
     weighted_by_pid: dict[int, float] | None = None,
 ) -> dict:
@@ -63,6 +104,8 @@ def _serialize(
             "steals": v.steals,
             "blocks": v.blocks,
         },
+        "season_totals": season_totals_by_pid.get(v.player_id, _EMPTY_SEASON_TOTALS),
+        "is_hot": v.player_id in hot_pids,
         "z_scores": {
             "points": round(v.z_points, 3),
             "rebounds": round(v.z_rebounds, 3),
@@ -104,6 +147,8 @@ def list_players(
 ) -> dict:
     values = compute_player_values(db)
     drafted_by = {r.player_id: r.team_id for r in db.scalars(select(Roster)).all()}
+    season_totals_by_pid = _current_season_totals(db)
+    hot_pids = compute_hot_player_ids(db)
 
     marginal_by_pid: dict[int, float] | None = None
     if for_team_id is not None:
@@ -167,7 +212,7 @@ def list_players(
         "strategic_team_id": strategic_team_id,
         "strategy_weights": strategy_weights,
         "players": [
-            _serialize(v, drafted_by, marginal_by_pid, weighted_by_pid)
+            _serialize(v, drafted_by, season_totals_by_pid, hot_pids, marginal_by_pid, weighted_by_pid)
             for v in values
         ],
     }
