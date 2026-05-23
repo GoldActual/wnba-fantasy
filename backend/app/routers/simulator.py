@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin
 from app.db import get_db
 from app.simulator import SimResult, SimulatorError, simulate_pickup
 from app.standings import CATS
@@ -53,7 +54,7 @@ def _serialize(r: SimResult) -> dict:
     }
 
 
-@router.post("/simulator/pickup")
+@router.post("/simulator/pickup", dependencies=[Depends(require_admin)])
 def post_simulate_pickup(req: SimRequest, db: Session = Depends(get_db)) -> dict:
     try:
         result = simulate_pickup(
