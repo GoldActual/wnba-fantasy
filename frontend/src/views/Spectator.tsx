@@ -393,6 +393,10 @@ export function Spectator() {
 
         <footer className="pt-4 text-xs text-slate-400 dark:text-slate-600">
           Read-only spectator view · data refreshes daily at 6am Pacific
+          {' · '}
+          <a href="/owner" className="hover:underline hover:text-slate-600 dark:hover:text-slate-400">
+            Owner →
+          </a>
         </footer>
       </section>
     </main>
