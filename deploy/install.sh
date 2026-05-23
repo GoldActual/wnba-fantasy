@@ -42,10 +42,20 @@ fi
 "$VENV/bin/pip" install -r "$BACKEND/requirements.txt"
 
 # --- Frontend build -----------------------------------------------------
-echo "--> Building frontend (npm ci && npm run build)"
+echo "--> Building frontend (npm install && npm run build)"
 cd "$FRONTEND"
-npm ci
+# `npm install` rather than `npm ci` because the lockfile is generated on
+# Windows (dev machine) and `npm ci` rejects mismatched platform-specific
+# optional deps on Linux ARM64 (the Pi). `npm install` is lenient and
+# resolves the platform-correct optional deps from the registry.
+npm install
 npm run build
+# Starlette's StaticFiles(html=True) serves `404.html` (not `index.html`)
+# on unknown paths. For SPA client-side routing (e.g. `/spectator`) to
+# work, mirror index.html as 404.html so any unmatched URL falls through
+# to the SPA shell. Acceptable trade-off: a typo'd API path also returns
+# the HTML index — the dev console makes that obvious for this app.
+cp dist/index.html dist/404.html
 cd "$REPO_ROOT"
 
 # --- Data directory (DB-preserving) ------------------------------------

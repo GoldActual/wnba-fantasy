@@ -47,10 +47,13 @@ app.include_router(trends.router, prefix="/api")
 
 
 # Serve the built SPA from the same origin as the API. html=True makes
-# Starlette fall back to index.html for any unmatched path, giving the
-# SPA client-side routing for free. A typo'd API path like /ap/players
-# will return the HTML index rather than a JSON 404 — acceptable for
-# this single-user app; the dev console makes it obvious.
+# Starlette serve index.html for `/` and serve `404.html` (NOT
+# index.html) for unknown paths. deploy/install.sh copies index.html
+# to 404.html post-build, so unknown paths fall through to the SPA shell
+# and client-side routing handles them (e.g. /spectator). A typo'd API
+# path like /ap/players therefore returns the HTML index rather than
+# a JSON 404 — acceptable for this single-user app; the dev console
+# makes the typo obvious.
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="spa")
 else:
