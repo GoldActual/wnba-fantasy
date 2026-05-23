@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   CartesianGrid,
   Line,
@@ -25,10 +25,9 @@ import {
 } from '../api'
 import { ThemeToggle } from '../components/ThemeToggle'
 
-// Spectator view is the polished public dashboard at /spectator. It's
-// shared with non-league friends via the Tailscale Funnel URL, so the
-// header intentionally omits owner-only affordances (sign-in, sync, draft,
-// transactions form). Everything here calls public read-only endpoints.
+// Public spectator dashboard, served at `/` (Tailscale Funnel URL). Owner
+// tool lives at `/owner`. Everything here calls public read-only endpoints
+// and never surfaces sign-in, sync, or write affordances.
 
 const CATS: Cat[] = ['points', 'rebounds', 'assists', 'steals', 'blocks']
 const CAT_LABEL: Record<Cat, string> = {
@@ -71,6 +70,13 @@ function formatSyncTime(iso: string | null): string {
   })
 }
 
+function injuryBadge(status: string | null): { dot: string; tone: string } {
+  if (!status) return { dot: '', tone: '' }
+  const s = status.toLowerCase()
+  if (s.includes('out')) return { dot: '🔴', tone: 'text-red-700 dark:text-red-300' }
+  return { dot: '🟡', tone: 'text-amber-700 dark:text-amber-300' }
+}
+
 function summarizeEvent(ev: TxnEvent): string {
   if (ev.event_type === 'pickup') {
     const drop = ev.legs.find((l) => l.transaction_type === 'drop')
@@ -94,22 +100,110 @@ type TeamOrder = {
 
 type FlatPoint = Record<string, string | number>
 
-function flattenStanding(trends: TrendsResponse): FlatPoint[] {
+function flatten(
+  trends: TrendsResponse,
+  metric: 'standing' | Cat,
+): FlatPoint[] {
   return trends.days.map((d) => {
     const point: FlatPoint = { date: d.date }
     for (const [tid, snap] of Object.entries(d.teams)) {
       const name = trends.team_names[tid]
-      point[name] = snap.standing
+      if (metric === 'standing') point[name] = snap.standing
+      else point[name] = snap.cats[metric]
     }
     return point
   })
 }
 
-function StandingsTable({
-  data,
-}: {
-  data: StandingsResponse
-}) {
+function TeamPanel({ team }: { team: StandingsTeam }) {
+  // Render current roster first, then any traded-away contributors whose
+  // pre-trade stats still count toward this team. Departed rows are
+  // greyed out so the distinction is visible without a column header.
+  const current = team.players.filter((p) => p.is_current_roster)
+  const departed = team.players.filter((p) => !p.is_current_roster)
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 mt-2">
+      <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 text-sm text-slate-600 dark:text-slate-400">
+        Roster ({current.length}) — {team.games_played} games played
+        {departed.length > 0 && (
+          <span className="ml-2 text-xs">
+            · {departed.length} traded-away contributor{departed.length > 1 ? 's' : ''} below
+          </span>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-300">
+            <tr className="text-left">
+              <th className="px-3 py-1.5">Player</th>
+              <th className="px-3 py-1.5 w-12 text-right">GP</th>
+              {CATS.map((c) => (
+                <th key={c} className="px-3 py-1.5 w-16 text-right">
+                  {CAT_LABEL[c]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...current, ...departed].map((p) => {
+              const inj = injuryBadge(p.injury_status)
+              const departedStyle = !p.is_current_roster
+                ? 'italic text-slate-500 dark:text-slate-400'
+                : ''
+              return (
+                <tr
+                  key={p.player_id}
+                  className={`border-t border-slate-100 dark:border-slate-800 ${departedStyle}`}
+                >
+                  <td className="px-3 py-1.5">
+                    {inj.dot && (
+                      <span
+                        className={`mr-1 ${inj.tone}`}
+                        title={p.injury_status ?? ''}
+                      >
+                        {inj.dot}
+                      </span>
+                    )}
+                    {p.is_rookie && (
+                      <span className="mr-1" title="Rookie">
+                        🆕
+                      </span>
+                    )}
+                    {p.name}
+                    <span className="ml-1 text-xs text-slate-400">
+                      {p.wnba_team} · {p.positions.join('/')}
+                      {!p.is_current_roster && ' · traded away'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{p.games}</td>
+                  {CATS.map((c) => (
+                    <td key={c} className="px-3 py-1.5 text-right tabular-nums">
+                      {p[c as keyof typeof p] as number}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+            <tr className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/30 font-medium">
+              <td className="px-3 py-1.5">Total</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{team.games_played}</td>
+              {CATS.map((c) => (
+                <td key={c} className="px-3 py-1.5 text-right tabular-nums">
+                  {team.cats[c].total}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function StandingsTable({ data }: { data: StandingsResponse }) {
+  const [expanded, setExpanded] = useState<number | null>(null)
+
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
       <div className="overflow-x-auto rounded">
@@ -128,39 +222,55 @@ function StandingsTable({
             </tr>
           </thead>
           <tbody>
-            {data.teams.map((t: StandingsTeam) => (
-              <tr
-                key={t.team_id}
-                className="border-t border-slate-100 dark:border-slate-800"
-              >
-                <td className="px-3 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400">
-                  {formatRank(t.standing)}
-                </td>
-                <td className="px-3 py-2">{t.team_name}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                  {formatRank(t.rank_sum)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {t.games_played}
-                </td>
-                {CATS.map((c) => {
-                  const cl = t.cats[c]
-                  return (
-                    <td
-                      key={c}
-                      className="px-3 py-2 text-right tabular-nums"
-                    >
-                      <span className="text-slate-900 dark:text-slate-100">
-                        {cl.total}
-                      </span>
-                      <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                        #{formatRank(cl.rank)}
-                      </span>
+            {data.teams.map((t: StandingsTeam) => {
+              const isExpanded = expanded === t.team_id
+              return (
+                <Fragment key={t.team_id}>
+                  <tr
+                    onClick={() =>
+                      setExpanded((cur) => (cur === t.team_id ? null : t.team_id))
+                    }
+                    className="border-t border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                  >
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400">
+                      {formatRank(t.standing)}
                     </td>
-                  )
-                })}
-              </tr>
-            ))}
+                    <td className="px-3 py-2">
+                      <span className="text-slate-400 mr-1">
+                        {isExpanded ? '▾' : '▸'}
+                      </span>
+                      {t.team_name}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                      {formatRank(t.rank_sum)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {t.games_played}
+                    </td>
+                    {CATS.map((c) => {
+                      const cl = t.cats[c]
+                      return (
+                        <td key={c} className="px-3 py-2 text-right tabular-nums">
+                          <span className="text-slate-900 dark:text-slate-100">
+                            {cl.total}
+                          </span>
+                          <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                            #{formatRank(cl.rank)}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={4 + CATS.length} className="px-3 pb-3">
+                        <TeamPanel team={t} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -168,81 +278,173 @@ function StandingsTable({
   )
 }
 
-function StandingTrendChart({
+function TrendLineChart({
+  data,
+  teamOrder,
+  yReversed,
+  yDomain,
+  height = 280,
+}: {
+  data: FlatPoint[]
+  teamOrder: TeamOrder[]
+  yReversed?: boolean
+  yDomain?: [number | 'auto', number | 'auto']
+  height?: number
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+        <CartesianGrid stroke="currentColor" strokeOpacity={0.1} />
+        <XAxis
+          dataKey="date"
+          tickFormatter={formatTickDate}
+          stroke="currentColor"
+          fontSize={11}
+        />
+        <YAxis
+          reversed={yReversed}
+          domain={yDomain}
+          allowDecimals={false}
+          stroke="currentColor"
+          fontSize={11}
+        />
+        <Tooltip
+          contentStyle={{
+            background: 'rgb(15 23 42 / 0.95)',
+            border: '1px solid rgb(51 65 85)',
+            borderRadius: 6,
+            fontSize: 12,
+            color: 'rgb(241 245 249)',
+          }}
+          labelFormatter={(label) => formatTickDate(String(label))}
+        />
+        {teamOrder.map((t) => (
+          <Line
+            key={t.name}
+            type="monotone"
+            dataKey={t.name}
+            stroke={teamColor(t.draft_slot)}
+            strokeWidth={1.5}
+            dot={false}
+            activeDot={{ r: 4 }}
+            isAnimationActive={false}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function TeamLegend({ teamOrder }: { teamOrder: TeamOrder[] }) {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 text-xs">
+      {teamOrder.map((t) => (
+        <span key={t.name} className="inline-flex items-center gap-1">
+          <span
+            className="inline-block w-3 h-0.5"
+            style={{ background: teamColor(t.draft_slot) }}
+          />
+          <span>{t.name}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+type ChartMode = 'cats' | 'standing'
+
+function ChartsSection({
   trends,
   teamOrder,
 }: {
   trends: TrendsResponse
   teamOrder: TeamOrder[]
 }) {
-  const data = useMemo(() => flattenStanding(trends), [trends])
+  const [mode, setMode] = useState<ChartMode>('cats')
+
+  const standingData = useMemo(() => flatten(trends, 'standing'), [trends])
+  const catData: Record<Cat, FlatPoint[]> = useMemo(() => {
+    const out = {} as Record<Cat, FlatPoint[]>
+    for (const c of CATS) out[c] = flatten(trends, c)
+    return out
+  }, [trends])
+
   const numTeams = teamOrder.length || 8
 
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <div className="flex items-baseline justify-between mb-1">
-        <h2 className="text-sm font-semibold">Standing over time</h2>
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          lower = better · 1 = league leader
-        </span>
-      </div>
-      <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
-          <CartesianGrid stroke="currentColor" strokeOpacity={0.1} />
-          <XAxis
-            dataKey="date"
-            tickFormatter={formatTickDate}
-            stroke="currentColor"
-            fontSize={11}
-          />
-          <YAxis
-            reversed
-            domain={[1, numTeams]}
-            allowDecimals={false}
-            stroke="currentColor"
-            fontSize={11}
-          />
-          <Tooltip
-            contentStyle={{
-              background: 'rgb(15 23 42 / 0.95)',
-              border: '1px solid rgb(51 65 85)',
-              borderRadius: 6,
-              fontSize: 12,
-              color: 'rgb(241 245 249)',
-            }}
-            labelFormatter={(label) => formatTickDate(String(label))}
-          />
-          {teamOrder.map((t) => (
-            <Line
-              key={t.name}
-              type="monotone"
-              dataKey={t.name}
-              stroke={teamColor(t.draft_slot)}
-              strokeWidth={1.5}
-              dot={false}
-              activeDot={{ r: 4 }}
-              isAnimationActive={false}
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 text-xs">
-        {teamOrder.map((t) => (
-          <span key={t.name} className="inline-flex items-center gap-1">
-            <span
-              className="inline-block w-3 h-0.5"
-              style={{ background: teamColor(t.draft_slot) }}
-            />
-            <span>{t.name}</span>
+      <div className="flex items-baseline justify-between mb-3 gap-2 flex-wrap">
+        <h2 className="text-sm font-semibold">
+          {mode === 'cats' ? 'Categories over time' : 'Standing over time'}
+        </h2>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {mode === 'cats' ? 'higher = better' : 'lower = better · 1 = leader'}
           </span>
-        ))}
+          <div className="inline-flex rounded-md border border-slate-300 dark:border-slate-700 overflow-hidden text-xs">
+            <button
+              type="button"
+              onClick={() => setMode('cats')}
+              className={
+                'px-2 py-1 ' +
+                (mode === 'cats'
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800')
+              }
+            >
+              By category
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('standing')}
+              className={
+                'px-2 py-1 border-l border-slate-300 dark:border-slate-700 ' +
+                (mode === 'standing'
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800')
+              }
+            >
+              Standing
+            </button>
+          </div>
+        </div>
       </div>
+
+      {mode === 'standing' && (
+        <TrendLineChart
+          data={standingData}
+          teamOrder={teamOrder}
+          yReversed
+          yDomain={[1, numTeams]}
+        />
+      )}
+
+      {mode === 'cats' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {CATS.map((c) => (
+            <div
+              key={c}
+              className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 p-3"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1">
+                {CAT_LABEL[c]}
+              </div>
+              <TrendLineChart
+                data={catData[c]}
+                teamOrder={teamOrder}
+                height={180}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <TeamLegend teamOrder={teamOrder} />
     </div>
   )
 }
 
 function RecentMoves({ data }: { data: TransactionsResponse }) {
-  // Latest first — sort by effective_date desc, then created_at desc as a tiebreaker.
   const events = [...data.events]
     .sort((a, b) => {
       if (a.effective_date !== b.effective_date) {
@@ -374,7 +576,7 @@ export function Spectator() {
         {standings && (
           <div>
             <h2 className="text-sm font-semibold mb-2 text-slate-700 dark:text-slate-200">
-              Standings
+              Standings <span className="text-xs font-normal text-slate-500 dark:text-slate-400">— click a team to see its roster</span>
             </h2>
             <StandingsTable data={standings} />
             {standings.league_games_to_date === 0 && (
@@ -386,7 +588,7 @@ export function Spectator() {
         )}
 
         {trends && trends.days.length > 0 && (
-          <StandingTrendChart trends={trends} teamOrder={teamOrder} />
+          <ChartsSection trends={trends} teamOrder={teamOrder} />
         )}
 
         {transactions && <RecentMoves data={transactions} />}
